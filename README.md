@@ -388,7 +388,7 @@ The dynamic model, f(x,u), describes how the state evolves over time based on th
 
 The dynamic model uses the following equations for roll (ϕ) and pitch (θ) as defined in the book: 
 
-![Dynamic Model Equations](images/dynamic_model_equations)
+![Dynamic Model Equations](images/dynamic_model_equations.png)
 
 Where:
 - ϕ and θ represent the roll and pitch angles.
