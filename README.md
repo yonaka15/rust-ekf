@@ -3,9 +3,14 @@
 
 # Extended Kalman Filter for Quadcopter Attitude Estimation in Rust
 
-## Goal
 
-To implement an Extended Kalman Filter (EKF) in Rust for fusing accelerometer and gyroscope data, enabling precise estimation of a quadcopter's attitude (roll, pitch, and yaw angles).
+## Abstract
+
+This project implements an Extended Kalman Filter (EKF) in Rust to estimate the attitude (roll, pitch, and yaw angles) of a quadcopter using real-time gyroscope and accelerometer data. Drawing from the theoretical foundation provided by _Small Unmanned Aircraft: Theory and Practice_, the EKF was adapted and expanded to include yaw estimation, angular rates, and modular design for future enhancements such as GPS or vision integration.
+
+The implementation is fully integrated into a ROS2 Rust node and operates with real-world IMU data, showcasing its practical application in robotics. The design leverages Rust’s high-performance and memory-safe features to create a robust and extensible solution for state estimation in dynamic systems.
+
+This EKF not only serves as a critical component of the quadcopter's control system but also demonstrates the growing potential of Rust as a language for robotics applications. The accompanying README details the theoretical foundation, design considerations, and implementation specifics, making it a valuable resource for engineers and developers exploring Rust-based robotics.
 
 ## Why
 
@@ -137,8 +142,11 @@ The EKF implementation has been designed with modularity and future expandabilit
         -   z: Positive in the down direction.
     -   **Unit Conversion**:  
         Most IMU sensors output raw data that needs to be converted to the required units. Ensure proper scaling and calibration are applied to get consistent measurements in rad/s and m/s².
+3.  **Orientation Visualization**  
+    The expected orientation for IMU data in an EKF can be seen in the image below:  
+    _**(Insert EKF IMU orientation image here)**_
     
-3.  **Non-Standard IMU Orientation**  
+4.  **Non-Standard IMU Orientation**  
     If your IMU orientation differs from the standard EKF frame, you must adjust your data to match.
     
     -   Example: For my application, I used an **ICM-20948 IMU**, which has a non-standard orientation:
@@ -149,6 +157,8 @@ The EKF implementation has been designed with modularity and future expandabilit
         -   Flip x and y data.
         -   Multiply z data by −1.
     
+    A visualization of the ICM-20948 IMU orientation is shown below:  
+    _**(Insert ICM-20948 IMU orientation image here)**_
     
 
 ----------
