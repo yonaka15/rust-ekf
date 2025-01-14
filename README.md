@@ -6,13 +6,83 @@
 
 ## Abstract
 
-This project implements an Extended Kalman Filter (EKF) in Rust to estimate the attitude (roll, pitch, and yaw angles) of a quadcopter using real-time gyroscope and accelerometer data. Drawing from the theoretical foundation provided by _Small Unmanned Aircraft: Theory and Practice_, the EKF was adapted and expanded to include yaw estimation, angular rates, and modular design for future enhancements such as GPS or vision integration.
+This project implements an Extended Kalman Filter (EKF) in Rust to estimate the attitude (roll, pitch, and yaw angles) of a quadcopter using real-time gyroscope and accelerometer data. Drawing from the theoretical foundation provided by _Small Unmanned Aircraft: Theory and Practice_ by Randall W. Beard and Timothy W. McLain, the EKF was adapted and expanded to include yaw estimation, angular rates, and modular design for future enhancements such as GPS or vision integration.
 
 The implementation is fully integrated into a ROS2 Rust node and operates with real-world IMU data, showcasing its practical application in robotics. The design leverages Rust’s high-performance and memory-safe features to create a robust and extensible solution for state estimation in dynamic systems.
 
 This EKF not only serves as a critical component of the quadcopter's control system but also demonstrates the growing potential of Rust as a language for robotics applications. The accompanying README details the theoretical foundation, design considerations, and implementation specifics, making it a valuable resource for engineers and developers exploring Rust-based robotics.
 
-## Why
+## How to Use `rust-ekf`
+
+The `rust-ekf` library can be used in your Rust projects to implement an Extended Kalman Filter for state estimation. Follow the steps below to integrate it into your project.
+
+### Adding `rust-ekf` as a Dependency
+
+You can include `rust-ekf` as a dependency in your `Cargo.toml` by referencing the GitHub repository. Add the following lines to your `Cargo.toml`:
+
+	[dependencies]
+	rust-ekf = { git = "https://github.com/OrlandoQuintana/rust-ekf.git" }
+This tells Cargo to pull the library directly from the GitHub repository and use it in your project.
+
+----------
+
+### Importing `rust-ekf` into Your Code
+
+To use the library in your Rust code, import the `EKF` struct at the top of your file. 
+
+Example:
+
+	use rust_ekf::EKF;
+
+This makes the `EKF` struct available for use in your code.
+
+----------
+
+### Using the `rust-ekf` Code Locally
+
+If you prefer to clone the `rust-ekf` repository and use it as a local dependency, follow these steps:
+
+1.  Clone the repository to your local machine:
+
+		git clone https://github.com/OrlandoQuintana/rust-ekf.git
+2. Place the cloned repository in a desired location on your computer.
+3. Add the local path to your `Cargo.toml` dependencies:
+
+		[dependencies]
+		rust-ekf = { path = "../path/to/rust-ekf" }
+	Replace `../path/to/rust-ekf` with the actual relative path to the `rust-ekf` folder.
+
+### Example Usage in Your Code
+
+Here’s an example of how you might use the `rust-ekf` library:
+		
+	use rust_ekf::EKF;
+
+	fn main() {
+	    // Create a new EKF instance
+	    let mut ekf = EKF::new();
+
+	    // Example gyroscope data (roll rate, pitch rate, yaw rate in rad/s)
+	    let gyro_data = [0.01, -0.02, 0.03];
+
+	    // Prediction phase
+	    ekf.predict(gyro_data);
+
+	    // Example accelerometer data (x, y, z acceleration in m/s^2)
+	    let accel_data = [0.0, 9.81, 0.0];
+
+	    // Update phase
+	    ekf.update(accel_data);
+
+	    // Get the updated state vector
+	    let state = ekf.get_state();
+	    println!("Updated State Vector: {:?}", state);
+	}
+
+
+
+## Extended Kalman Filter Purpose
+
 
 
 Accurate attitude estimation is critical for quadcopter control, requiring sensor fusion due to the strengths and limitations of individual sensors:
@@ -144,7 +214,7 @@ The EKF implementation has been designed with modularity and future expandabilit
         Most IMU sensors output raw data that needs to be converted to the required units. Ensure proper scaling and calibration are applied to get consistent measurements in rad/s and m/s².
 3.  **Orientation Visualization**  
     The expected orientation for IMU data in an EKF can be seen in the image below:  
-    _**(Insert EKF IMU orientation image here)**_
+    _![Expected IMU orientation for EKF](images/ekf_imu_orientation.jpeg)
     
 4.  **Non-Standard IMU Orientation**  
     If your IMU orientation differs from the standard EKF frame, you must adjust your data to match.
@@ -158,7 +228,7 @@ The EKF implementation has been designed with modularity and future expandabilit
         -   Multiply z data by −1.
     
     A visualization of the ICM-20948 IMU orientation is shown below:  
-    _**(Insert ICM-20948 IMU orientation image here)**_
+    _![ICM-20948 IMU Orientation](images/icm20948_orientation.jpeg)
     
 
 ----------
@@ -682,7 +752,7 @@ The Jacobian is crucial for:
 
 The book uses a smaller state vector with only roll and pitch angles (ϕ,θ) and defines a 3×2 Jacobian matrix:
 
-![3x2 Measurement Jacobian Matrix from Book](images/3by2_meas_jac.png)
+![3x2 Measurement Jacobian Matrix from Book](images/3x2_meas_jac.png)
 
 
 Here:
@@ -918,14 +988,11 @@ These steps complete the **update phase** of the Extended Kalman Filter. With th
 
 # Conclusion
 
-The implementation of this Extended Kalman Filter (EKF) for quadcopter attitude estimation represents the culmination of theoretical foundations, design decisions, and practical coding in Rust. Building upon the pioneering work of Randall W. Beard and Timothy W. McLain in _Small Unmanned Aircraft: Theory and Practice_, this project demonstrates how their framework for EKF can be extended and adapted to more complex use cases, such as estimating a six-component state vector that includes yaw angle and angular rates.
 
-This design is intentionally modular and forward-thinking. By incorporating yaw angle, even though it currently lacks direct measurement updates, the framework is prepared for future integration of additional sensors, such as GPS or vision systems, without requiring substantial rewrites. Similarly, the inclusion of angular velocity estimates within the state vector reflects a deliberate choice to account for noisy gyroscope data within the EKF itself, leveraging its filtering capabilities to reduce system noise.
+The implementation of this Extended Kalman Filter (EKF) for quadcopter attitude estimation combines theoretical foundations, deliberate design decisions, and practical coding in Rust. Building on the work of Randall W. Beard and Timothy W. McLain in _Small Unmanned Aircraft: Theory and Practice_, this project expands their framework to a six-component state vector, including yaw angle and angular rates, demonstrating its adaptability to more complex use cases.
 
-The Extended Kalman Filter plays a crucial role in robotics and aerospace, enabling reliable state estimation by fusing sensor data with dynamic models. In quadcopters, for instance, it ensures precise orientation estimation, which is foundational for stable flight and control. Without such filtering, systems relying on raw sensor data would be plagued by drift, noise, and inconsistencies, ultimately leading to unreliable performance. The EKF’s ability to handle nonlinear dynamics and optimize uncertainty between prediction and measurement makes it a cornerstone of modern robotics.
+The design is modular and future-proof, enabling seamless integration of additional sensors, such as GPS or vision systems, without major rewrites. Incorporating angular velocity estimates directly into the state vector leverages the EKF’s ability to filter noisy gyroscope data, ensuring more reliable attitude estimation. This capability is crucial in robotics, where precise state estimation is essential for stable flight, navigation, and control.
 
-The choice of Rust for this implementation is not just a technical decision—it’s a statement about the future of robotics. Rust's guarantees of memory safety, its performance comparable to C++, and its growing adoption in the robotics community make it an ideal language for implementing critical systems like the EKF. Rust's strong type system and modern tooling allow for the creation of robust, maintainable, and efficient codebases, which are essential in robotics applications where safety and reliability are non-negotiable.
+The choice of Rust reflects the language’s growing role in robotics, offering memory safety, high performance, and a modern type system. Rust’s strengths make it well-suited for implementing critical systems like the EKF, enabling the creation of robust and efficient code for safety-critical applications.
 
-By developing this EKF in Rust, this project not only demonstrates the applicability of Rust to sophisticated robotics algorithms but also contributes to the growing ecosystem of Rust-based tools for robotics and control systems. The decision to share this implementation as an open-source project further underscores the commitment to advancing the field by providing a resource for others to build upon.
-
-In conclusion, this EKF implementation is more than just a practical tool for quadcopter attitude estimation. It is a testament to the power of combining established theoretical work with modern programming practices to create flexible, scalable, and high-performance solutions for real-world robotics challenges. As Rust continues to grow in the robotics space, projects like this can play a role in demonstrating its potential to transform the way we approach safety-critical and high-performance systems.
+This EKF implementation is both a practical tool for quadcopter attitude estimation and a demonstration of Rust’s potential in robotics. By combining proven theoretical models with modern programming practices, this project provides a scalable and reliable solution for real-world robotics challenges.
