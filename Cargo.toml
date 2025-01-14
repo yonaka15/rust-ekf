@@ -1,5 +1,5 @@
 [package]
-name = "ekf"
+name = "rust-ekf"
 version = "0.1.0"
 edition = "2021"
 
