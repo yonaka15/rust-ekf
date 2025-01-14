@@ -1,4 +1,4 @@
-
+﻿
 
 
 # Extended Kalman Filter for Quadcopter Attitude Estimation in Rust
@@ -386,24 +386,18 @@ The dynamic model, f(x,u), describes how the state evolves over time based on th
 
 #### Dynamic Model Equations
 
-The dynamic model uses the following equations for roll (ϕ) and pitch (θ) as defined in the book:
-$$
-\dot{\phi} = p + q \sin(\phi) \tan(\theta) + r \cos(\phi) \tan(\theta) + \xi_{\phi}
-$$
+The dynamic model uses the following equations for roll (ϕ) and pitch (θ) as defined in the book: 
 
-$$
-\dot{\theta} = q \cos(\phi) - r \sin(\phi) + \xi_{\theta}
-$$
+![Dynamic Model Equations](images/dynamic_model_equations)
+
 Where:
 - ϕ and θ represent the roll and pitch angles.
 -   p, q, and r are the angular velocities (roll rate, pitch rate, and yaw rate) from the gyroscope.
 -   ξ<sub>ϕ</sub> and ξ<sub>θ​</sub> are process noise terms, which are accounted for by the process noise matrix Q.
 
-The yaw angle (ψ\) is updated using a simpler propagation model because yaw is not affected by gravity or the roll and pitch dynamics:
-$$
-ψ˙=r\dot{\psi} = rψ˙​=r
-$$
-Here, yaw is estimated by directly integrating the yaw rate (rrr) over time. This integration assumes that yaw dynamics are independent of roll and pitch.
+The yaw angle (ψ\) is updated using a simpler propagation model because yaw is not affected by gravity or the roll and pitch dynamics: $ψ˙​=r$
+
+Here, yaw is estimated by directly integrating the yaw rate (r) over time. This integration assumes that yaw dynamics are independent of roll and pitch.
 
 #### Code Implementation
 
@@ -466,33 +460,16 @@ For a state vector of size n, the Jacobian is an n×n  matrix. Each row contains
 
 For example, the **Dynamic Jacobian** in the book (state vector: [ϕ,θ]) is:
 
-$$
-\frac{\partial f}{\partial x} =
-\begin{bmatrix}
-\frac{\partial \dot{\phi}}{\partial \phi} & \frac{\partial \dot{\phi}}{\partial \theta} \\
-\frac{\partial \dot{\theta}}{\partial \phi} & \frac{\partial \dot{\theta}}{\partial \theta}
-\end{bmatrix}
-$$
+![2x2 Dynamic Jacobian Matrix from Book](images/2by2_dyn_jac.png)
+
 Populating this matrix with the partial derivatives derived in the book, we get:
-$$
-\frac{\partial f}{\partial x} =
-\begin{bmatrix}
-q \cos(\phi) \tan(\theta) - r \sin(\phi) \tan(\theta) & \frac{q \sin(\phi) - r \cos(\phi)}{\cos^2(\theta)} \\
--q \sin(\phi) - r \cos(\phi) & 0
-\end{bmatrix}
-$$
+
+![Populated 2x2 Dynamic Jacobian Matrix from Book](images/2by2_dyn_jac_full.png)
+
 Since our state vector includes six components ([ϕ,θ,ψ,p,q,r]), the Jacobian matrix expands to a 6x6 matrix:
-$$
-\frac{\partial f}{\partial x} =
-\begin{bmatrix}
-\frac{\partial \dot{\phi}}{\partial \phi} & \frac{\partial \dot{\phi}}{\partial \theta} & \frac{\partial \dot{\phi}}{\partial \psi} & \frac{\partial \dot{\phi}}{\partial p} & \frac{\partial \dot{\phi}}{\partial q} & \frac{\partial \dot{\phi}}{\partial r} \\
-\frac{\partial \dot{\theta}}{\partial \phi} & \frac{\partial \dot{\theta}}{\partial \theta} & \frac{\partial \dot{\theta}}{\partial \psi} & \frac{\partial \dot{\theta}}{\partial p} & \frac{\partial \dot{\theta}}{\partial q} & \frac{\partial \dot{\theta}}{\partial r} \\
-\frac{\partial \dot{\psi}}{\partial \phi} & \frac{\partial \dot{\psi}}{\partial \theta} & \frac{\partial \dot{\psi}}{\partial \psi} & \frac{\partial \dot{\psi}}{\partial p} & \frac{\partial \dot{\psi}}{\partial q} & \frac{\partial \dot{\psi}}{\partial r} \\
-\frac{\partial \dot{p}}{\partial \phi} & \frac{\partial \dot{p}}{\partial \theta} & \frac{\partial \dot{p}}{\partial \psi} & \frac{\partial \dot{p}}{\partial p} & \frac{\partial \dot{p}}{\partial q} & \frac{\partial \dot{p}}{\partial r} \\
-\frac{\partial \dot{q}}{\partial \phi} & \frac{\partial \dot{q}}{\partial \theta} & \frac{\partial \dot{q}}{\partial \psi} & \frac{\partial \dot{q}}{\partial p} & \frac{\partial \dot{q}}{\partial q} & \frac{\partial \dot{q}}{\partial r} \\
-\frac{\partial \dot{r}}{\partial \phi} & \frac{\partial \dot{r}}{\partial \theta} & \frac{\partial \dot{r}}{\partial \psi} & \frac{\partial \dot{r}}{\partial p} & \frac{\partial \dot{r}}{\partial q} & \frac{\partial \dot{r}}{\partial r}
-\end{bmatrix}
-$$
+
+![6x6 Dynamic Jacobian Matrix](images/6by6_dyn_jac.png)
+
 ### Our 6x6 Dynamic Jacobian Matrix
 
 In our implementation:
@@ -501,17 +478,9 @@ In our implementation:
 2.  Rows 4-6 correspond to the angular rates (p,q,r) and remain as identity rows. This is because we directly use the angular rates from the gyroscope without propagating them dynamically.
 
 The matrix becomes:
-$$
-\frac{\partial f}{\partial x} =
-\begin{bmatrix}
-q \cos{\phi} \tan{\theta} - r \sin{\phi} \tan{\theta} & \frac{q \sin{\phi} - r \cos{\phi}}{\cos^2{\theta}} & 0 & 0 & 0 & 0 \\
--q \sin{\phi} - r \cos{\phi} & 0 & 0 & 0 & 0 & 0 \\
-0 & 0 & 0 & 0 & 0 & 1 \\
-0 & 0 & 0 & 1 & 0 & 0 \\
-0 & 0 & 0 & 0 & 1 & 0 \\
-0 & 0 & 0 & 0 & 0 & 1
-\end{bmatrix}
-$$
+
+![Populated 6x6 Dynamic Jacobian Matrix](images/6by6_dyn_jac_full.png)
+
 #### Code Implementation
 
 The code implementation for this Jacobian is as follows:
@@ -539,9 +508,9 @@ The code implementation for this Jacobian is as follows:
 ### Update the Covariance Matrix
 
 The final step in the **Prediction Phase** is updating the **Covariance Matrix**, which represents the uncertainty in the state estimate. This step accounts for how the system dynamics and process noise contribute to the uncertainty. The mathematical equation for this update is:
-$$
-P = P + \left(\frac{T_{\text{out}}}{N}\right) \left(APA^\top + Q\right),
-$$
+
+![Covariance Matrix Equation](images/cov_mtx.png)
+
 where:
 
 -   P: The covariance matrix, which was initialized as a 6×6 identity matrix with some magnitude during the EKF initialization.
@@ -618,14 +587,11 @@ The **Measurement Model** serves a role similar to the **Dynamics Model, f(x,u)*
 -   The measurement model h(x,u) predicts what the sensors **should** measure, given the current state and system dynamics.
 -   By comparing this prediction with the actual sensor readings, the EKF identifies and corrects discrepancies, improving the state estimate.
 
-For this EKF, the measurement model relates the **state vector** to the expected accelerometer readings. These equations project gravitational acceleration (g) and angular effects (p,q,r) onto the accelerometer's axes using trigonometry. The derived equations from the book are as follows:$$
-h(x, u) = 
-\begin{bmatrix}
-qV_a \sin{\theta} + g \sin{\theta} \\
-rV_a \cos{\theta} - pV_a \sin{\theta} - g \cos{\theta} \sin{\phi} \\
--qV_a \cos{\theta} - g \cos{\theta} \cos{\phi}
-\end{bmatrix},
-$$
+For this EKF, the measurement model relates the **state vector** to the expected accelerometer readings. These equations project gravitational acceleration (g) and angular effects (p,q,r) onto the accelerometer's axes using trigonometry. The derived equations from the book are as follows:
+
+![Measurement Model h(x, u) ](images/meas_mod_eq.png)
+
+
 #### Explanation of Components:
 
 1.  **Roll (h<sub>ϕ</sub>)**:
@@ -668,10 +634,7 @@ In the **Update Phase**, this measurement model is a key step. It allows the EKF
 
 ### Compute Innovation
 
-The **Innovation** represents the difference between the actual measurement from sensors (z) and the predicted measurement (h(x,u)), based on the current state estimate. It quantifies the discrepancy between what the sensors measure and what the EKF predicts. Mathematically, this is expressed as:
-$$
-y = z - h(x, u),
-$$
+The **Innovation** represents the difference between the actual measurement from sensors (z) and the predicted measurement (h(x,u)), based on the current state estimate. It quantifies the discrepancy between what the sensors measure and what the EKF predicts. Mathematically, this is expressed as: $y = z - h(x, u)$
 
 where:
 
@@ -718,14 +681,10 @@ The Jacobian is crucial for:
 #### Measurement Jacobian in the Book
 
 The book uses a smaller state vector with only roll and pitch angles (ϕ,θ) and defines a 3×2 Jacobian matrix:
-$$
-\frac{\partial h}{\partial x} =
-\begin{bmatrix}
-0 & qV_a \cos \theta + g \cos \theta \\
--g \cos \phi \cos \theta & -rV_a \sin \theta - pV_a \cos \theta + g \sin \phi \sin \theta \\
-g \sin \phi \cos \theta & (qV_a + g \cos \phi) \sin \theta
-\end{bmatrix},
-$$
+
+![3x2 Measurement Jacobian Matrix from Book](images/3by2_meas_jac.png)
+
+
 Here:
 
 -   **Rows** correspond to the measurement outputs (h<sub>roll</sub>, h<sub>pitch</sub>, h<sub>yaw</sub>).
@@ -744,14 +703,9 @@ Since our state vector has 6 components (ϕ,θ,ψ,p,q,r), the Jacobian expands t
 
 The resulting measurement Jacobian becomes:
 
-$$
-\frac{\partial h}{\partial x} =
-\begin{bmatrix}
-0 & qV_a \cos \theta + g \cos \theta & 0 & 0 & 0 & 0 \\
--g \cos \phi \cos \theta & -rV_a \sin \theta - pV_a \cos \theta + g \sin \phi \sin \theta & 0 & 0 & 0 & 0 \\
-g \sin \phi \cos \theta & (qV_a + g \cos \phi) \sin \theta & 0 & 0 & 0 & 0
-\end{bmatrix},
-$$
+![3x6 Measurement Jacobian Matrix](images/3by6_meas_jac.png)
+
+
 This design makes the EKF modular and expandable:
 
 -   A magnetometer, GPS, or vision system can be added later to update yaw without rewriting the EKF.
@@ -804,11 +758,8 @@ This mechanism balances prediction and measurement contributions, ensuring robus
 
 #### Mathematical Representation
 
-The Innovation Covariance is defined as:
+The Innovation Covariance is defined as: $S = H_i P H_i^\top + R_i$
 
-$$
-S = H_i P H_i^\top + R_i,
-$$
 where:
 
 -   H<sub>i</sub>: Measurement Jacobian matrix, representing the sensitivity of the predicted sensor outputs to changes in the state vector.
@@ -855,10 +806,8 @@ The Kalman Gain enables the EKF to adapt dynamically in real-time to changing un
 
 #### Mathematical Representation
 
-The Kalman Gain is calculated as:
-$$
-K = P H_i^\top S^{-1},
-$$
+The Kalman Gain is calculated as: $K = P H_i^\top S^{-1}$
+
 where:
 
 -   P: Covariance matrix from the prediction phase, representing the prediction uncertainty.
@@ -891,11 +840,8 @@ In this step, the EKF **refines its estimate of the system state** by incorporat
 
 #### Mathematical Representation:
 
-The updated state vector is defined as:
+The updated state vector is defined as: $\hat{x} = \hat{x} + K \cdot \left( y - h(\hat{x}, u) \right)$
 
-$$
-\hat{x} = \hat{x} + K \cdot \left( y - h(\hat{x}, u) \right),
-$$
 where:
 
 -   $\hat{x}$: Current state vector estimate (from the prediction phase).
@@ -937,10 +883,8 @@ The covariance matrix P quantifies the uncertainty in the state estimate. By inc
 
 #### Mathematical Representation:
 
-The updated covariance matrix is defined as:
-$$
-P = (I - K H) P,
-$$
+The updated covariance matrix is defined as: $P = (I - K H) P$
+
 where:
 
 -   I: Identity matrix of the same size as the covariance matrix.
