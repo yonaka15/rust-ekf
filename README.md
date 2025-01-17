@@ -16,6 +16,7 @@ This EKF not only serves as a critical component of the quadcopter's control sys
 
 <details>
 <summary>How to Use `rust-ekf`<summary>
+
 ## How to Use `rust-ekf`
 
 The `rust-ekf` library can be used in your Rust projects to implement an Extended Kalman Filter for state estimation. Follow the steps below to integrate it into your project.
