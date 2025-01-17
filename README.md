@@ -572,6 +572,8 @@ The **Update Phase** incorporates sensor measurements (in this case, acceleromet
 
 This structure outlines the logical flow of the EKF and highlights the roles of the dynamic and measurement models, as well as the iterative process of combining predictions with sensor corrections. Each step ensures that the system state estimate is as accurate as possible while accounting for uncertainty in both the system's dynamics and the sensor data.
 
+<details>
+<summary>Prediction Phase</summary>
 
 ## Prediction Phase
 
@@ -786,6 +788,10 @@ The corresponding Rust code for updating the covariance matrix is:
 -   **Importance of Tuning Q:** The values in the process noise matrix Q are critical to achieving good performance in the EKF. If Q is too small, the filter will overly trust the dynamics model, potentially failing to account for unmodeled behaviors. If Q is too large, the filter will become overly cautious, slowing down convergence.
 -   This step ensures that the EKF properly captures the propagated uncertainty after predicting the next state.
 
+</details>
+
+<details>
+<summary>Update Phase</summary>
 
 ## Update Phase
 
@@ -1140,6 +1146,9 @@ The updated covariance matrix P now reflects the reduced uncertainty in the stat
 ----------
 
 These steps complete the **update phase** of the Extended Kalman Filter. With the **prediction phase** and **update phase** combined, the EKF is now ready to iterate and continuously refine its state estimate in real-time.
+
+</details>
+
 
 </details>
 
