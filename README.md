@@ -15,7 +15,7 @@ This EKF not only serves as a critical component of the quadcopter's control sys
 `rust-ekf` v1.0.0 estimates the attitude of the quadcopter in Euler angles (ϕ,θ,ψ). `rust-ekf` v2.0.0 maintains the Euler estimation but implements a new EKF that estimates the quadcopter's attitude as a quaternion (w, x, y, z). Euler estimation presents technical difficulties such as gimbal lock, angle wrapping, and complex, nonlinear matrix math. Using quaternion estimation eliminates these difficulties and results is a more accurate and stables estimation of the quadcopter's attitude. 
 
 <details>
-<summary>How to Use `rust-ekf`<summary>
+<summary>How to Use `rust-ekf`</summary>
 
 ## How to Use `rust-ekf`
 
@@ -84,7 +84,7 @@ Here’s an example of how you might use the `rust-ekf` library:
 	    println!("Updated State Vector: {:?}", state);
 	}
 
-<details>
+</details>
 
 ## Extended Kalman Filter Purpose
 
