@@ -12,6 +12,8 @@ The implementation is fully integrated into a ROS2 Rust node and operates with r
 
 This EKF not only serves as a critical component of the quadcopter's control system but also demonstrates the growing potential of Rust as a language for robotics applications. The accompanying README details the theoretical foundation, design considerations, and implementation specifics, making it a valuable resource for engineers and developers exploring Rust-based robotics.
 
+`rust-ekf` v1.0.0 estimates the attitude of the quadcopter in Euler angles (ϕ,θ,ψ). `rust-ekf` v2.0.0 maintains the Euler estimation but implements a new EKF that estimates the quadcopter's attitude as a quaternion (w, x, y, z). Euler estimation presents technical difficulties such as gimbal lock, angle wrapping, and complex, nonlinear matrix math. Using quaternion estimation eliminates these difficulties and results is a more accurate and stables estimation of the quadcopter's attitude. 
+
 ## How to Use `rust-ekf`
 
 The `rust-ekf` library can be used in your Rust projects to implement an Extended Kalman Filter for state estimation. Follow the steps below to integrate it into your project.
@@ -191,6 +193,124 @@ The EKF implementation has been designed with modularity and future expandabilit
 
 -   **Modularity**: Key matrices (state vector, covariance matrix, Q, and R) are defined in the EKF struct and initialized at creation, making the implementation easy to extend.
 -   **Expandability**: The design anticipates adding more sensors (e.g., GPS, vision) to improve yaw correction and overall attitude estimation accuracy.
+
+  ## Quaternion-Based Extended Kalman Filter (Version 2.0.0)
+
+#### Why Switch to Quaternions?
+
+In Version 2.0.0 of `rust-ekf`, the Extended Kalman Filter (EKF) has been updated to estimate orientation using **quaternions** rather than Euler angles. This decision addresses several key limitations of Euler angles:
+
+1.  **Gimbal Lock**: A mathematical singularity that occurs when pitch reaches ±90°, causing a loss of one degree of freedom.
+2.  **Angle Wrapping**: Euler angles are cyclic, requiring manual handling of discontinuities when angles cross ±180° or 360°.
+3.  **Stability and Precision**: Quaternions provide a compact, efficient, and numerically stable representation of orientation, avoiding the pitfalls of singularities and discontinuities.
+
+Quaternions enable a smoother and more robust estimation of orientation, making them ideal for real-world robotics applications like quadcopter attitude estimation.
+
+----------
+
+#### State Vector and Models in Quaternion-Based EKF
+The Extended Kalman Filter process for quaternion-based estimation is identical to the process for a Euler-based estimation except the State Vector, Dynamic model and Jacobians, and Measurement model and Jacobians need to accurately represent the system in quaternions. Below are the updates. They were implemented in the same EKF steps as was done in the Euler estimation.
+
+##### State Vector
+
+The state vector in this implementation is a 7-component vector:
+
+![Quaternion EKF State Vector](images/ekf_quat_statevector.png)
+
+----------
+##### Dynamic Model
+
+The dynamic model propagates the state vector using the gyroscope data. The quaternion dynamics are defined as:
+
+![Quaternion EKF Dynamic Model](images/ekf_quat_dyn_mod.png)
+
+The quaternion is integrated over time using the gyroscope data, normalized to ensure it remains a valid unit quaternion.
+##### Dynamic Jacobian
+
+The Jacobian of the dynamic model (∂f∂x) accounts for the effect of angular velocity on quaternion evolution and is computed as a 7×7 matrix.
+
+----------
+
+##### Measurement Model
+
+The measurement model predicts accelerometer readings based on the current state:
+
+![Quaternion EKF Measurement Model](images/ekf_quat_meas_mod.png)
+
+##### Measurement Jacobian
+
+The measurement Jacobian (∂h∂x​) is a 3×7 matrix that maps changes in the state vector to changes in the predicted accelerometer readings. Its components are derived from the quaternion-to-rotation matrix conversion and gravitational influence.
+
+#### Code Implementation Highlights
+
+**Dynamic Model**:
+
+	// Compute quaternion derivative: q_dot = 0.5 * Ω(omega) * q
+	let omega_matrix = Self::omega_matrix(omega);
+	let q_dot = 0.5 * omega_matrix * q;
+
+	// Integrate quaternion
+	let q_new = q + q_dot * dt;
+
+	// Normalize quaternion
+	let norm = q_new.norm();
+	if norm > 0.0 {
+	    let q_new = q_new / norm;
+	    self.state[0] = q_new[0];
+	    self.state[1] = q_new[1];
+	    self.state[2] = q_new[2];
+	    self.state[3] = q_new[3];
+	}
+
+**Dynamic Jacobian**:
+
+	let  mut  f  =  Matrix7::identity();
+	f[(0, 1)] =  -p  *  dt;
+	f[(0, 2)] =  -q  *  dt;
+	f[(0, 3)] =  -r  *  dt;
+	f[(1, 0)] =  p  *  dt;
+	f[(1, 2)] =  r  *  dt;
+	f[(1, 3)] =  -q  *  dt;
+	// Remaining rows...
+
+**Measurement Model**:
+
+	// Compute expected accelerometer measurement: h(x) = R^T * g
+	let gravity = Vector3::new(0.0, 0.0, -GRAVITY);
+	let r_transpose = Self::quaternion_to_rotation_matrix(q).transpose();
+	let accel_expected = r_transpose * gravity;
+
+	// Innovation: y = z - h(x)
+	let z = Vector3::new(accel[0], accel[1], accel[2]);
+	let innovation = z - accel_expected;
+
+**Measurement Jacobian**:
+
+	let mut h = Matrix3x7::zeros();
+	h[(0, 0)] = 2.0 * (-GRAVITY * q2);
+	h[(0, 1)] = 2.0 * (GRAVITY * q3);
+	h[(0, 2)] = 2.0 * (-GRAVITY * q0);
+	h[(0, 3)] = 2.0 * (GRAVITY * q1);
+	// Remaining rows...
+
+#### Benefits of Quaternion Estimation
+
+1.  **No Gimbal Lock**: Ensures reliable estimation even in extreme maneuvers.
+2.  **No Angle Wrapping**: Avoids discontinuities inherent in Euler angle representation.
+3.  **Numerical Stability**: Reduces computational errors through normalization.
+4.  **Seamless Integration with Robotics**: Many robotics frameworks (e.g., ROS2) support quaternions natively for 3D orientation representation.
+
+----------
+
+### How to Use the Quaternion-Based EKF
+
+`rust-ekf` v2.0.0 adopts quaternion-based attitude estimation as the default estimation and moves Euler estimation into a legacy estimation callable with struct `EKFEuler`. 
+
+`predict`, `update`, and `get_state` functionality remains the same. Migrating to v2.0.0's quaternion estimation should should be seamless. If Euler estimation is desired, make sure to use the `EKFEuler` struct in place of the `EKF` struct as follows:
+
+	let mut ekf = EKFEuler::new();
+
+
 
 ## Requirements
 
@@ -986,10 +1106,26 @@ These steps complete the **update phase** of the Extended Kalman Filter. With th
 
 ----------
 
+# Implementation and Results
+
+The `rust-ekf` v2.0.0 Quaternion-based Extended Kalman Filter attitude implementation was implemented in a ROS2 quadcopter project using a raspberry pi and ICM-20948 IMU. 
+
+A ROS2 node was written in Rust to subscribe to raw IMU data from a ROS2 topic, process the data with the EKF's `predict` and `update` methods, and publish the resulting quaternion to a new ROS2 node. 
+
+ROS2's visualization tool RVIZ2 was used to vizualise the attitude in real time. This real-time visualization aided in tuning the Q and R matrices of the EKF to attain stable estimation that avoids gyroscope drift and responds to motion without delay. 
+
+See the visualization below:
+
+![Quaternion EKF RVIZ2 Demonstration](images/ekf_quat_rviz2_demo.gif)
+
+----------
+
 # Conclusion
 
 
-The implementation of this Extended Kalman Filter (EKF) for quadcopter attitude estimation combines theoretical foundations, deliberate design decisions, and practical coding in Rust. Building on the work of Randall W. Beard and Timothy W. McLain in _Small Unmanned Aircraft: Theory and Practice_, this project expands their framework to a six-component state vector, including yaw angle and angular rates, demonstrating its adaptability to more complex use cases.
+The implementation of this Extended Kalman Filter (EKF) for quadcopter attitude estimation combines theoretical foundations, deliberate design decisions, and practical coding in Rust. Building on the work of Randall W. Beard and Timothy W. McLain in _Small Unmanned Aircraft: Theory and Practice_, this project expanded their framework in v1.0.0 to a six-component state vector, including yaw angle and angular rates, demonstrating its adaptability to more complex use cases. 
+
+Version 2.0.0 of `rust-ekf` expanded upon the Euler implementation with a Quaternion-based implementation, effectively eliminating technical issues like gimbal lock and angle wrapping. The EKF is being used in a real-world robotics application with reliable results.  
 
 The design is modular and future-proof, enabling seamless integration of additional sensors, such as GPS or vision systems, without major rewrites. Incorporating angular velocity estimates directly into the state vector leverages the EKF’s ability to filter noisy gyroscope data, ensuring more reliable attitude estimation. This capability is crucial in robotics, where precise state estimation is essential for stable flight, navigation, and control.
 

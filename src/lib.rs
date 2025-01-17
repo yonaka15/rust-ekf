@@ -1,3 +1,5 @@
-pub mod rust_ekf;
+pub mod rust_ekf_euler;
+pub mod rust_ekf_quaternion;
 
-pub use rust_ekf::{EKF, GRAVITY}; // Re-export the `EKF` struct so it can be used as `rust_ekf::EKF`
+pub use rust_ekf_euler::{EKFEuler, GRAVITY as GRAVITY_EULER};
+pub use rust_ekf_quaternion::{EKF, GRAVITY};

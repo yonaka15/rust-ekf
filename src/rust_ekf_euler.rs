@@ -2,8 +2,8 @@ use nalgebra::{Matrix3, Matrix3x6, Matrix6, Vector6, Vector3};
 
 pub const GRAVITY: f64 = 9.81; // Gravitational constant (m/s^2)
 
-// EKF Struct
-pub struct EKF {
+// EKFEuler Struct
+pub struct EKFEuler {
     pub state: Vector6<f64>,                // State Vector: [roll (phi), pitch (theta), yaw (psi), roll rate (p), pitch rate (q), yaw rate (r)]
     pub covariance: Matrix6<f64>,           // Covariance matrix P
     pub process_noise: Matrix6<f64>,        // Process noise Q
@@ -12,15 +12,15 @@ pub struct EKF {
     pub airspeed: f64,                      // Airspeed (v_a), initialized at 0
 }
 
-impl EKF {
-    // Create a new EKF instance
+impl EKFEuler {
+    // Create a new EKFEuler instance
     pub fn new() -> Self {
-        EKF {
+        EKFEuler {
             state: Vector6::zeros(),                        // Initial state: zero roll, pitch, yaw, and angular rates
             covariance: Matrix6::identity() * 1.0,          // Initialize P with some uncertainty
             process_noise: Matrix6::identity() * 0.1,       // Process noise Q (TUNED EXPERIMENTALLY)
             measurement_noise: Matrix3::identity() * 0.2,    // Measurement noise R (TUNED EXPERIMENTALLY)
-            dt: 0.01,
+            dt: 0.05,
             airspeed: 0.0,                                  // Assume airspeed is 0 for now; future nonzero airspeed compatibility included
         }
     }
