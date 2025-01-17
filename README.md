@@ -1159,11 +1159,11 @@ These steps complete the **update phase** of the Extended Kalman Filter. With th
 
 # Implementation and Results
 
-The `rust-ekf` v2.0.0 Quaternion-based Extended Kalman Filter attitude implementation was implemented in a ROS2 quadcopter project using a raspberry pi and ICM-20948 IMU. 
+The `rust-ekf` v2.0.0 Quaternion-based Extended Kalman Filter attitude estimation was implemented in a ROS2-based quadcopter project using a raspberry pi and ICM-20948 IMU. 
 
-A ROS2 node was written in Rust to subscribe to raw IMU data from a ROS2 topic, process the data with the EKF's `predict` and `update` methods, and publish the resulting quaternion to a new ROS2 node. 
+A ROS2 node was written in Rust to subscribe to raw IMU data from an ICM-20948, process the data with the EKF's `predict` and `update` methods, and publish the resulting quaternion to a new ROS2 topic.
 
-ROS2's visualization tool RVIZ2 was used to vizualise the attitude in real time. This real-time visualization aided in tuning the Q and R matrices of the EKF to attain stable estimation that avoids gyroscope drift and responds to motion without delay. 
+ROS2's visualization tool RViz2 was used to vizualise the attitude estimate in real time. This real-time visualization aided in tuning the Q and R matrices of the EKF to attain stable estimation that avoids gyroscope drift and quikcly responds to motion. 
 
 See the visualization below:
 
