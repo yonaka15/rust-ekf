@@ -57,9 +57,9 @@ impl EKF {
     /// Predict step using gyro data
     pub fn predict(&mut self, gyro: [f64; 3]) {
 
-        // Extract current quaternion
-        let dt = self.dt;
-        let omega = Vector3::new(gyro[0], gyro[1], gyro[2]);//0.0); // Ignore yaw (set ωz = 0)
+        // Extract current quaternion for readability
+        let dt = self.dt; // time step
+        let omega = Vector3::new(gyro[0], gyro[1], gyro[2]); // gyro data
     
         // Extract current quaternion
         let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
@@ -71,34 +71,37 @@ impl EKF {
         // Integrate quaternion
         let q_new = q + q_dot * dt;
     
-        // Normalize quaternion
+        // Normalize quaternion to ensure quaternion remains unit quaternion
+        // and set the first 4 indexes (quaternion values) to the integrated and normalized
+        // values, q_new
         let norm = q_new.norm();
         if norm > 0.0 {
             let q_new = q_new / norm;
             self.state[0] = q_new[0];
             self.state[1] = q_new[1];
             self.state[2] = q_new[2];
-            self.state[3] = q_new[3]; //0.0;
+            self.state[3] = q_new[3];
         }
     
-        // Update angular velocity in state
+        // Update angular velocity in state vector with the gyro measurements
         self.state[4] = gyro[0];
         self.state[5] = gyro[1];
-        self.state[6] = gyro[2]; //0.0; // Ignore yaw rate (ωz)
+        self.state[6] = gyro[2]; 
 
-        // Compute dynamic Jacobian (∂f/∂x)
+        // Compute dynamic Jacobian (∂f/∂x) using custom compute_f_jacobian method
         let f_jacobian = self.compute_f_jacobian(gyro);
 
-        // Predict covariance: P' = FPFᵀ + Q
+        // Predict covariance using: P' = FPFᵀ + Q
         self.covariance = f_jacobian * self.covariance * f_jacobian.transpose() + self.process_noise;
     }
 
     /// Update step using accelerometer data
     pub fn update(&mut self, accel: [f64; 3]) {
-        // Extract quaternion from the state
+        // Extract quaternion from the state that was estimated with dynamics + gyro data in the predict phase
         let mut q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
     
-        // Compute expected accelerometer measurement: h(x) = R^T * g
+        // Compute expected accelerometer measurement using the rotation matrix (calculated from quaternion) 
+        // and gravitational matrix: h(x) = R^T * g
         let gravity = Vector3::new(0.0, 0.0, -GRAVITY);
         let r_transpose = Self::quaternion_to_rotation_matrix(q).transpose();
         let accel_expected = r_transpose * gravity;
@@ -107,7 +110,7 @@ impl EKF {
         let z = Vector3::new(accel[0], accel[1], accel[2]); // Measured accelerometer data
         let innovation = z - accel_expected;
     
-        // Compute measurement Jacobian (∂h/∂x)
+        // Compute measurement Jacobian (∂h/∂x) using the custom compute_h_jacobian method
         let h_jacobian = self.compute_h_jacobian(q);
     
         // Compute innovation covariance: S = HPHᵀ + R
@@ -116,19 +119,15 @@ impl EKF {
         // Compute Kalman gain: K = P Hᵀ S⁻¹
         let k = self.covariance * h_jacobian.transpose() * s.try_inverse().unwrap();
     
-        // Update quaternion with roll and pitch corrections only
-        //q[3] = 0.0; // Fix yaw (q3) component
+        // Update state vector with new quaterion
         self.state += k * innovation;
 
-        // Explicitly zero out yaw-related components in the quaternion
-        //self.state[3] = 0.0; // Set yaw-related quaternion component to zero
-        //self.state[6] = 0.0; // Set yaw rate to zero
-    
         // Update covariance: P = (I - KH)P
         let i = Matrix7::identity();
         self.covariance = (i - k * h_jacobian) * self.covariance;
     
-        // Normalize quaternion after correction
+        // Normalize quaternion after correction (always normalize the quaternion after predict and update phase
+        // to avoid accumulating error and ensure quaternion remains unit value)
         let norm = q.norm();
         if norm > 0.0 {
             q = q / norm;

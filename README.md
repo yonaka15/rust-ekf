@@ -1163,7 +1163,7 @@ The `rust-ekf` v2.0.0 Quaternion-based Extended Kalman Filter attitude estimatio
 
 A ROS2 node was written in Rust to subscribe to raw IMU data from an ICM-20948, process the data with the EKF's `predict` and `update` methods, and publish the resulting quaternion to a new ROS2 topic.
 
-ROS2's visualization tool RViz2 was used to vizualise the attitude estimate in real time. This real-time visualization aided in tuning the Q and R matrices of the EKF to attain stable estimation that avoids gyroscope drift and quikcly responds to motion. 
+ROS2's visualization tool RViz2 was used to vizualise the attitude estimate in real time. This real-time visualization aided in tuning the Q and R matrices of the EKF to attain stable estimation that avoids gyroscope drift and quickly responds to motion. 
 
 See the visualization below:
 
