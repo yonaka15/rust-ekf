@@ -33,7 +33,7 @@ impl EKF {
             let q0 = (1.0 + az).sqrt() / 2.0;
             let q1 = -ay / (2.0 * q0);
             let q2 = ax / (2.0 * q0);
-            let q3: f64 = 0.0;
+            let q3: f64 = 0.0; // Yaw is zero since accelerometer data cannot calulcate yaw angles
 
             let norm = (q0.powi(2) + q1.powi(2) + q2.powi(2) + q3.powi(2)).sqrt();
             let q0 = q0 / norm;
@@ -79,26 +79,20 @@ impl EKF {
             covariance: Matrix7::identity() * 1.0, // Initial state covariance
             process_noise,
             measurement_noise,
-            //dt: 0.002, // System frequency 200 Hz
         }
     }
     
-    /// Predict step using gyro data
+    /// Predict step using gyro data, pass real dt (computed dynamically)
     pub fn predict(&mut self, gyro: [f64; 3], dt: f64) {
-
-        // Extract current quaternion for readability
-        //let dt = self.dt; // time step
-        let omega = Vector3::new(gyro[0], gyro[1], gyro[2]); // gyro data
+        let omega = Vector3::new(gyro[0], gyro[1], gyro[2]); // gyro data vector
     
         // Extract current quaternion
         let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
     
         // Compute quaternion derivative: q_dot = 0.5 * Ω(q) * q
         let omega_matrix = Self::omega_matrix(omega);
-        let q_dot = 0.5 * omega_matrix * q; // We actually changed this to 1.0 because the scaling was alreadu accounted for when
-                                            // using velocity measurements in radians per second. When using 0.5, our rotations were basically
-                                            // scaled down by 50% 
-    
+        let q_dot = 0.5 * omega_matrix * q;
+        
         // Integrate quaternion
         let q_new = q + q_dot * dt;
     
