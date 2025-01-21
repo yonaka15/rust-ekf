@@ -2,7 +2,7 @@ use nalgebra::{Matrix, Matrix4, Const, Vector3};
 
 // Define custom types for fixed-size matrices and vectors
 
-// nalgebra doesn't support all the sizes of vectors and matrices we need out of the box
+// nalgebra doesn't support all the sizes of vectors and matrices that we need out of the box
 // but we can create custom sizes like this
 type Vector7 = Matrix<f64, Const<7>, Const<1>, nalgebra::ArrayStorage<f64, 7, 1>>;
 type Matrix7 = Matrix<f64, Const<7>, Const<7>, nalgebra::ArrayStorage<f64, 7, 7>>;
@@ -17,48 +17,77 @@ pub struct EKF {
     pub covariance: Matrix7,            // Covariance matrix P
     pub process_noise: Matrix7,         // Process noise Q
     pub measurement_noise: Matrix3,     // Measurement noise R
-    pub dt: f64,                        // Time step (e.g., 0.01 for 100 Hz)
 }
 
 impl EKF {
-    /// Create a new EKF instance
-    pub fn new() -> Self {
-        // Initialize Q (process noise covariance matrix)
+    /// Create a new EKF instance, passing accelerometer data to calculate the initial quaternion (avoids using 0's for initial orientation)
+    pub fn new(accel_data: Option<[f64; 3]>) -> Self {
+        let (q0, q1, q2, q3) = if let Some(accel_data) = accel_data {
+            // Normalize accelerometer vector
+            let norm = (accel_data[0].powi(2) + accel_data[1].powi(2) + accel_data[2].powi(2)).sqrt();
+            let ax = accel_data[0] / norm;
+            let ay = accel_data[1] / norm;
+            let az = -accel_data[2] / norm;
+    
+            // Calculate quaternion from accelerometer data
+            let q0 = (1.0 + az).sqrt() / 2.0;
+            let q1 = -ay / (2.0 * q0);
+            let q2 = ax / (2.0 * q0);
+            let q3: f64 = 0.0;
 
-        // List out all the indexes for filter tuning
+            let norm = (q0.powi(2) + q1.powi(2) + q2.powi(2) + q3.powi(2)).sqrt();
+            let q0 = q0 / norm;
+            let q1 = q1 / norm;
+            let q2 = q2 / norm;
+            let q3 = q3 / norm;
+            
+
+            (q0, q1, q2, q3)
+        } else {
+            // Default to identity quaternion
+            (1.0, 0.0, 0.0, 0.0)
+        };
+    
+        // Initialize process and measurement noise matrices
         let mut process_noise = Matrix7::zeros();
-        process_noise[(0, 0)] = 1e-3; // q0
-        process_noise[(1, 1)] = 1e-3; // q1
-        process_noise[(2, 2)] = 1e-3; // q2
-        process_noise[(3, 3)] = 1e-3; // q3
-        process_noise[(4, 4)] = 1e-1; // ωx
-        process_noise[(5, 5)] = 1e-1; // ωy
-        process_noise[(6, 6)] = 1e-1; // ωz
-
-        // Initialize R (measurement noise covariance matrix)
+        process_noise[(0, 0)] = 1e-5; // q0
+        process_noise[(1, 1)] = 1e-5; // q1
+        process_noise[(2, 2)] = 1e-5; // q2
+        process_noise[(3, 3)] = 1e-5; // q3
+        process_noise[(4, 4)] = 1e-5; // ωx
+        process_noise[(5, 5)] = 1e-5; // ωy
+        process_noise[(6, 6)] = 1e-5; // ωz
+        
         let mut measurement_noise = Matrix3::zeros();
-        measurement_noise[(0, 0)] = 1e-4; // accel x
-        measurement_noise[(1, 1)] = 1e-4; // accel y
-        measurement_noise[(2, 2)] = 1e-4; // accel z
-
+        measurement_noise[(0, 0)] = 1e-1; // accel x
+        measurement_noise[(1, 1)] = 1e-1; // accel y
+        measurement_noise[(2, 2)] = 1e-1; // accel z
+        
+    
         EKF {
             state: {
                 let mut state = Vector7::zeros();
-                state[0] = 1.0; // Identity quaternion
+                state[0] = q0;
+                state[1] = q1;
+                state[2] = q2;
+                state[3] = q3;
+                state[4] = 0.0; // ωx
+                state[5] = 0.0; // ωy
+                state[6] = 0.0; // ωz
                 state
             },
             covariance: Matrix7::identity() * 1.0, // Initial state covariance
             process_noise,
             measurement_noise,
-            dt: 0.005, // System frequency 200 Hz
+            //dt: 0.002, // System frequency 200 Hz
         }
     }
-
+    
     /// Predict step using gyro data
-    pub fn predict(&mut self, gyro: [f64; 3]) {
+    pub fn predict(&mut self, gyro: [f64; 3], dt: f64) {
 
         // Extract current quaternion for readability
-        let dt = self.dt; // time step
+        //let dt = self.dt; // time step
         let omega = Vector3::new(gyro[0], gyro[1], gyro[2]); // gyro data
     
         // Extract current quaternion
@@ -66,7 +95,9 @@ impl EKF {
     
         // Compute quaternion derivative: q_dot = 0.5 * Ω(q) * q
         let omega_matrix = Self::omega_matrix(omega);
-        let q_dot = 0.5 * omega_matrix * q;
+        let q_dot = 0.5 * omega_matrix * q; // We actually changed this to 1.0 because the scaling was alreadu accounted for when
+                                            // using velocity measurements in radians per second. When using 0.5, our rotations were basically
+                                            // scaled down by 50% 
     
         // Integrate quaternion
         let q_new = q + q_dot * dt;
@@ -89,7 +120,7 @@ impl EKF {
         self.state[6] = gyro[2]; 
 
         // Compute dynamic Jacobian (∂f/∂x) using custom compute_f_jacobian method
-        let f_jacobian = self.compute_f_jacobian(gyro);
+        let f_jacobian = self.compute_f_jacobian(gyro, dt);
 
         // Predict covariance using: P' = FPFᵀ + Q
         self.covariance = f_jacobian * self.covariance * f_jacobian.transpose() + self.process_noise;
@@ -141,11 +172,11 @@ impl EKF {
     }
     
     /// Compute the dynamic Jacobian (∂f/∂x)
-    fn compute_f_jacobian(&self, gyro: [f64; 3]) -> Matrix7 {
+    fn compute_f_jacobian(&self, gyro: [f64; 3], dt: f64) -> Matrix7 {
         let p = gyro[0];
         let q = gyro[1];
         let r = gyro[2];
-        let dt = self.dt;
+        //let dt = self.dt;
 
         let mut f = Matrix7::identity();
         f[(0, 1)] = -p * dt;
@@ -194,15 +225,15 @@ impl EKF {
         let q3 = q[3];
 
         Matrix3::new(
-            1.0 - 2.0 * (q2 * q2 + q3 * q3),
+            1.0 - 1.0 * (q2 * q2 + q3 * q3),
             2.0 * (q1 * q2 - q0 * q3),
             2.0 * (q1 * q3 + q0 * q2),
             2.0 * (q1 * q2 + q0 * q3),
-            1.0 - 2.0 * (q1 * q1 + q3 * q3),
+            1.0 - 1.0 * (q1 * q1 + q3 * q3),
             2.0 * (q2 * q3 - q0 * q1),
             2.0 * (q1 * q3 - q0 * q2),
             2.0 * (q2 * q3 + q0 * q1),
-            1.0 - 2.0 * (q1 * q1 + q2 * q2),
+            1.0 - 1.0 * (q1 * q1 + q2 * q2),
         )
     }
 
