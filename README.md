@@ -1,18 +1,13 @@
-﻿
-
-
-# Extended Kalman Filter for Quadcopter Attitude Estimation in Rust
+﻿# Extended Kalman Filter for Quadcopter Attitude Estimation in Rust
 
 
 ## Abstract
 
-This project implements an Extended Kalman Filter (EKF) in Rust to estimate the attitude (roll, pitch, and yaw angles) of a quadcopter using real-time gyroscope and accelerometer data. Drawing from the theoretical foundation provided by _Small Unmanned Aircraft: Theory and Practice_ by Randall W. Beard and Timothy W. McLain, the EKF was adapted and expanded to include yaw estimation, angular rates, and modular design for future enhancements such as GPS or vision integration.
+This project implements an Extended Kalman Filter (EKF) in Rust to estimate the attitude of a quadcopter using real-time gyroscope and accelerometer data. The EKF takes gyroscope data (in radians/second), accelerometer data (in meters/second²), and a time step (in seconds) as inputs and outputs an estimated orientation as a quaternion. The filter uses gyroscope data and quaternion dynamics to predict the state, then refines the estimate by incorporating accelerometer data.
 
-The implementation is fully integrated into a ROS2 Rust node and operates with real-world IMU data, showcasing its practical application in robotics. The design leverages Rust’s high-performance and memory-safe features to create a robust and extensible solution for state estimation in dynamic systems.
+The implementation is fully integrated into a seperate ROS2 Rust robotics project, demonstrating its practical application in robotics with real-world IMU data. Leveraging Rust’s high performance and memory safety, the EKF provides a robust and extensible solution for state estimation in dynamic systems.
 
-This EKF not only serves as a critical component of the quadcopter's control system but also demonstrates the growing potential of Rust as a language for robotics applications. The accompanying README details the theoretical foundation, design considerations, and implementation specifics, making it a valuable resource for engineers and developers exploring Rust-based robotics.
-
-`rust-ekf` v1.0.0 estimates the attitude of the quadcopter in Euler angles (ϕ,θ,ψ). `rust-ekf` v2.0.0 maintains the Euler estimation but implements a new EKF that estimates the quadcopter's attitude as a quaternion (w, x, y, z). Euler estimation presents technical difficulties such as gimbal lock, angle wrapping, and complex, nonlinear matrix math. Using quaternion estimation eliminates these difficulties and results is a more accurate and stables estimation of the quadcopter's attitude. 
+This EKF serves as a critical component of the quadcopter's control system, enabling precise attitude estimation for stable flight. It also highlights Rust’s potential as a powerful language for robotics applications. The accompanying README provides a detailed explanation of the theoretical foundations, design decisions, and implementation specifics, making it a valuable resource for engineers and developers exploring Rust-based robotics.
 
 <details>
 <summary>How to Use `rust-ekf`</summary>
@@ -69,9 +64,10 @@ Here’s an example of how you might use the `rust-ekf` library:
 
 	    // Example gyroscope data (roll rate, pitch rate, yaw rate in rad/s)
 	    let gyro_data = [0.01, -0.02, 0.03];
+        let dt = 0.005; 
 
 	    // Prediction phase
-	    ekf.predict(gyro_data);
+	    ekf.predict(gyro_data, dt);
 
 	    // Example accelerometer data (x, y, z acceleration in m/s^2)
 	    let accel_data = [0.0, 9.81, 0.0];
@@ -111,28 +107,6 @@ This complementary fusion leverages the strengths of both sensors to produce a m
 
 
 <details>
-<summary>Basis</summary>
-
-## Basis
-
-This implementation builds upon the principles and techniques presented in the book _Small Unmanned Aircraft: Theory and Practice_ by Randal W. Beard and Timothy W. McLain. The book provides a comprehensive guide to Extended Kalman Filter (EKF) applications for small aerial vehicles, particularly for attitude estimation.
-
-### Key Contributions from the Book:
-
--   The authors demonstrate the use of **gyroscope** and **accelerometer** data to estimate the roll and pitch angles of an aerial vehicle.
--   The state vector in their EKF implementation includes only **roll** and **pitch**, simplifying the problem to two degrees of freedom.
--   They provide detailed derivations of the **dynamics model** and **measurement model** used to fuse the gyroscope and accelerometer data effectively.
--   The book also walks through the two critical phases of the EKF:
-    1.  **Prediction Phase**: Updates the state estimate using the dynamics model and gyroscope data.
-    2.  **Update Phase**: Corrects the state estimate using the measurement model and accelerometer data.
-
-While the book focuses on roll and pitch estimation, this implementation extends the state vector to include **yaw**, enabling full 3D attitude estimation (roll, pitch, yaw) suitable for quadcopters. Additionally, it translates the theory into a modular Rust-based implementation, leveraging the clarity of the book's methods while expanding their applicability.
-
-This project owes significant inspiration to _Small Unmanned Aircraft: Theory and Practice_ and aims to make its concepts accessible to both hobbyists and professionals in the field of robotics and aerospace engineering.
-
-</details>
-
-<details>
 <summary>Design Decisions</summary>
 
 ## Design Decisions
@@ -141,61 +115,79 @@ This section outlines the key design decisions made during the implementation of
 
 ----------
 
-### 1. Expanded State Vector
+### 1. Quaternion Estimaton vs. Euler Estimation
 
-The original EKF from _Small Unmanned Aircraft: Theory and Practice_ included only roll and pitch in its state vector. In this implementation, the state vector has been expanded to include:
+Aircraft attitude is often described using Euler angles (roll, pitch, and yaw). Euler angles are intuitive and easy to understand because they provide a 3D representation of the aircraft's orientation in space. However, they come with significant drawbacks that make them less suitable for real-time attitude estimation in dynamic systems like quadcopters. These drawbacks include:
 
--   **Yaw Angle**
--   **Roll Rate**
--   **Pitch Rate**
--   **Yaw Rate**
+1.  **Gimbal Lock**: A mathematical singularity that occurs when one of the Euler angles reaches ±90° (e.g., pitch = 90°). In this state, the system loses one degree of freedom, making it impossible to represent certain orientations. This can lead to numerical instability and unpredictable behavior in control systems.
+2.  **Angle Wrapping**: Euler angles are cyclic, meaning they wrap around at ±180° or 360°. This creates discontinuities that require manual handling, such as unwrapping angles, which complicates algorithms and introduces potential errors.
+3.  **Computational Complexity**: Combining multiple rotations using Euler angles requires trigonometric functions (e.g., sine and cosine), which are computationally expensive and can lead to performance bottlenecks in real-time systems.
 
-This allows for a more comprehensive attitude estimation that can be extended to more complex systems and future sensors.
+To address these issues, this EKF implementation uses quaternions for attitude estimation. Quaternions are a four-dimensional representation of orientation made up of a scalar `w` and a vector `[x, y, z]`. These values together form a quaternion, which can be written as `q = w + xi + yj + zk`. Quaternions  offers several advantages including:
+
+1. **No Gimbal Lock**: Quaternions avoid singularities entirely, ensuring smooth and continuous representation of all possible orientations.
+2. **No Angle Wrapping**: Quaternions do not suffer from cyclic discontinuities, eliminating the need for angle unwrapping and simplifying algorithms.
+3. **Computational Efficiency**: Quaternion operations (e.g. multiplication, interpolation) are computationally efficient and avoid the need for trigonometric functions, making them ideal for real-time systems.
+4. **Robustness**: Quaternions provide a more stable and numerically robust representation of orientation, especially in dynamic systems like quadcopters where rapid changes in attitude are common.
+
+By using quaternions, this Extended Kalman Filter (EKF) implementation achieves smoother and more reliable attitude estimation, making it well-suited for real-world robotics applications like quadcopter control.
+
+
+### 2. Expanded State Vector
+
+Many aircraft attitude estimations using EKF, like the one found in _Small Unmanned Aircraft: Theory and Practice_ by Randall W. Beard and Timothy W. McLain (a key inspiration for this project) include only **roll and pitch Euler angles** in their state vectors. This is because only roll and pitch can be both predicted (using gyroscope data) and updated (using accelerometer data). Yaw, however, cannot be updated by accelerometer data, as it is independent of gravity.
+
+This EKF implementation takes a more comprehensive approach by:
+
+1. **Using Quaternions Instead of Euler Angles**: The state vector includes a full quaternion (`w, x, y, z`) for orientation estimation, avoiding the limitations of Euler angles.
+2. **Including Yaw Estimation**: Despite not having a sensor (e.g., magnetometer or GPS) to update yaw directly, the state vector includes a yaw-like estimate as part of the quaternion. This allows for a complete 3D orientation representation and supports future integration of yaw-correcting sensors.
+3. **Adding Angular Rates**: The state vector also includes roll, pitch, and yaw rates, enabling more robust and consistent attitude estimation.
+
+The full state vector is defined as: 
+
+-   **w**: The real part of the quaternion
+-   **x**: The coefficient of the `i` component.
+-   **y**: The coefficient of the `j` component.
+-   **z**: The coefficient of the `k` component.
+-   **Roll Rate**: Angular velocity around the x-axis.
+-   **Pitch Rate**: Angular velocity around the y-axis.
+-   **Yaw Rate**: Angular velocity around the z-axis.
+
+This expanded state vector provides a more comprehensive attitude estimation, making it adaptable to more complex systems and future sensor integrations.
+
+----------
 
 #### **Yaw Angle**
 
--   **Why it's critical**: Yaw is essential for flight control and navigation.
+-   **Why it's critical**: Yaw is essential for flight control and navigation, as it determines the quadcopter's heading..
 -   **Challenges with yaw**: Unlike roll and pitch, yaw is independent of gravity (rotation around the z-axis does not relate to the gravitational force). This makes it impossible to use accelerometer data to correct for drift in yaw estimation.
 -   **Current approach**: Yaw estimation is included in the prediction phase of the EKF but excluded from the update phase since no yaw-correcting sensor (e.g., magnetometer, GPS, or vision) is currently used.
--   **Future considerations**: This design supports future expansion when sensors like GPS or a vision system are introduced, enabling yaw correction.
+-   **Future considerations**: This design supports future expansion when sensors like GPS or a vision system are introduced, enabling yaw correction. So even though yaw is excluded from the update phase of this EKF, it remains in the model to provide an initial prediction and act as a placeholder for other sensor data to perform the update in the future.
 
 ----------
 
-### 2. Roll, Pitch, and Yaw Rates
+#### **Roll, Pitch, and Yaw Rates**
 
-The original implementation assumes high-quality, pre-filtered sensor data and excludes angular rates (gyro data) from the EKF. However, this implementation includes roll, pitch, and yaw rates for the following reasons:
+Many EKF implementations exclude angular rates from the state vector, assuming the use of high-quality, pre-filtered sensor data. However, this implementation includes roll, pitch, and yaw rates for the following reasons:
 
 -   **Handling noisy gyro data**: The EKF inherently filters noise via the process noise covariance matrix (Q), making it a robust option for filtering angular rates.
--   **Consistency across the system**: Gyro data is a key input for cascaded PID controllers in the quadcopter's flight system. Including gyro data in the EKF ensures consistency between the estimated attitude and angular rates, avoiding potential discrepancies from separate filtering methods.
--   **Drift correction**: Unlike standalone filters like low-pass filters, the EKF can correct for gyro drift, ensuring long-term accuracy in angular rate estimation.
+-   **Consistency across the system**: Gyro data is a key input for downstream cascaded PID controllers in the quadcopter's flight system. Including angular rates in the EKF ensures consistency between the estimated attitude and the rates used for control, avoiding potential discrepancies from separate filtering methods.
+-   **Drift correction**: Unlike standalone filters (e.g., low-pass filters), the EKF can correct for gyro drift, ensuring long-term accuracy in angular rate estimation.
+
 
 ----------
 
-### 3. Accelerometer Pre-Filtering
+#### **Angular Accelerations**
 
-Accelerometer data is highly sensitive to vibration and noise. To address this:
+The EKf **does not** include angular accelerations (accelerometer data) in the state vector because:
 
--   A **low-pass Butterworth filter** is applied to the raw accelerometer data before it is used in the update phase of the EKF.
--   **Why pre-filter accelerometer data?**
-    -   The accelerometer only serves as a secondary measurement for correcting gyro drift.
-    -   High-frequency noise from accelerometers can degrade EKF performance.
-    -   Pre-filtering reduces computational complexity by keeping the EKF matrices smaller.
+-   **Computational Complexity**: Adding three more states to the state vector would introduce excessive computational complexity, reducing real-time performance.
+-   **Downstream Role of Accelerometer Data**: Accelerometer data does not play as critical a role downstream as gyroscope data. It is not directly tied to the attitude estimate used in the PID controller.
+-   **Pre-filtering**: Accelerometer data is noisy and sensitive to vibrations, but it can be adequately filtered outside of the EKF using a low-pass Butterworth filter. Unlike gyroscope data, accelerometer data does not suffer from drift over time, making external filtering sufficient.
 
 ----------
 
-### 4. Airspeed Assumptions
-
-The EKF equations account for airspeed (V<sub>a</sub>), but in this implementation:
-
--   Airspeed is set to 0.00 as no airspeed sensor is currently available.
--   This assumption aligns with the book's approach, which neglects airspeed.
--   **Why include airspeed in the equations?**
-    -   It allows for future expansion if an airspeed sensor is added.
-    -   The quadcopter is intended to operate in controlled environments where stable airflow minimizes the impact of this simplification.
-
-----------
-
-### 5. Programming Language: Rust
+### 3. Programming Language: Rust
 
 The decision to implement the EKF in Rust is driven by several factors:
 
@@ -205,7 +197,7 @@ The decision to implement the EKF in Rust is driven by several factors:
 
 ----------
 
-### 6. Modularity and Expandability
+### 4. Modularity and Expandability
 
 The EKF implementation has been designed with modularity and future expandability in mind:
 
@@ -214,132 +206,7 @@ The EKF implementation has been designed with modularity and future expandabilit
 
 </details>
 
-<details>
-<summary>Quaternion-Based Extended Kalman Filter (Version 2.0.0)</summary>
-
-  ## Quaternion-Based Extended Kalman Filter (Version 2.0.0)
-
-#### Why Switch to Quaternions?
-
-In Version 2.0.0 of `rust-ekf`, the Extended Kalman Filter (EKF) has been updated to estimate orientation using **quaternions** rather than Euler angles. This decision addresses several key limitations of Euler angles:
-
-1.  **Gimbal Lock**: A mathematical singularity that occurs when pitch reaches ±90°, causing a loss of one degree of freedom.
-2.  **Angle Wrapping**: Euler angles are cyclic, requiring manual handling of discontinuities when angles cross ±180° or 360°.
-3.  **Stability and Precision**: Quaternions provide a compact, efficient, and numerically stable representation of orientation, avoiding the pitfalls of singularities and discontinuities.
-
-Quaternions enable a smoother and more robust estimation of orientation, making them ideal for real-world robotics applications like quadcopter attitude estimation.
-
 ----------
-
-#### State Vector and Models in Quaternion-Based EKF
-The Extended Kalman Filter process for quaternion-based estimation is identical to the process for a Euler-based estimation except the State Vector, Dynamic model and Jacobians, and Measurement model and Jacobians need to accurately represent the system in quaternions. Below are the updates. They were implemented in the same EKF steps as was done in the Euler estimation.
-
-##### State Vector
-
-The state vector in this implementation is a 7-component vector:
-
-![Quaternion EKF State Vector](images/ekf_quat_statevector.png)
-
-----------
-##### Dynamic Model
-
-The dynamic model propagates the state vector using the gyroscope data. The quaternion dynamics are defined as:
-
-![Quaternion EKF Dynamic Model](images/ekf_quat_dyn_mod.png)
-
-The quaternion is integrated over time using the gyroscope data, normalized to ensure it remains a valid unit quaternion.
-##### Dynamic Jacobian
-
-The Jacobian of the dynamic model (∂f∂x) accounts for the effect of angular velocity on quaternion evolution and is computed as a 7×7 matrix.
-
-----------
-
-##### Measurement Model
-
-The measurement model predicts accelerometer readings based on the current state:
-
-![Quaternion EKF Measurement Model](images/ekf_quat_meas_mod.png)
-
-##### Measurement Jacobian
-
-The measurement Jacobian (∂h∂x​) is a 3×7 matrix that maps changes in the state vector to changes in the predicted accelerometer readings. Its components are derived from the quaternion-to-rotation matrix conversion and gravitational influence.
-
-#### Code Implementation Highlights
-
-**Dynamic Model**:
-
-	// Compute quaternion derivative: q_dot = 0.5 * Ω(omega) * q
-	let omega_matrix = Self::omega_matrix(omega);
-	let q_dot = 0.5 * omega_matrix * q;
-
-	// Integrate quaternion
-	let q_new = q + q_dot * dt;
-
-	// Normalize quaternion
-	let norm = q_new.norm();
-	if norm > 0.0 {
-	    let q_new = q_new / norm;
-	    self.state[0] = q_new[0];
-	    self.state[1] = q_new[1];
-	    self.state[2] = q_new[2];
-	    self.state[3] = q_new[3];
-	}
-
-**Dynamic Jacobian**:
-
-	let  mut  f  =  Matrix7::identity();
-	f[(0, 1)] =  -p  *  dt;
-	f[(0, 2)] =  -q  *  dt;
-	f[(0, 3)] =  -r  *  dt;
-	f[(1, 0)] =  p  *  dt;
-	f[(1, 2)] =  r  *  dt;
-	f[(1, 3)] =  -q  *  dt;
-	// Remaining rows...
-
-**Measurement Model**:
-
-	// Compute expected accelerometer measurement: h(x) = R^T * g
-	let gravity = Vector3::new(0.0, 0.0, -GRAVITY);
-	let r_transpose = Self::quaternion_to_rotation_matrix(q).transpose();
-	let accel_expected = r_transpose * gravity;
-
-	// Innovation: y = z - h(x)
-	let z = Vector3::new(accel[0], accel[1], accel[2]);
-	let innovation = z - accel_expected;
-
-**Measurement Jacobian**:
-
-	let mut h = Matrix3x7::zeros();
-	h[(0, 0)] = 2.0 * (-GRAVITY * q2);
-	h[(0, 1)] = 2.0 * (GRAVITY * q3);
-	h[(0, 2)] = 2.0 * (-GRAVITY * q0);
-	h[(0, 3)] = 2.0 * (GRAVITY * q1);
-	// Remaining rows...
-
-#### Benefits of Quaternion Estimation
-
-1.  **No Gimbal Lock**: Ensures reliable estimation even in extreme maneuvers.
-2.  **No Angle Wrapping**: Avoids discontinuities inherent in Euler angle representation.
-3.  **Numerical Stability**: Reduces computational errors through normalization.
-4.  **Seamless Integration with Robotics**: Many robotics frameworks (e.g., ROS2) support quaternions natively for 3D orientation representation.
-
-----------
-
-### How to Use the Quaternion-Based EKF
-
-`rust-ekf` v2.0.0 adopts quaternion-based attitude estimation as the default estimation and moves Euler estimation into a legacy estimation callable with struct `EKFEuler`. 
-
-`predict`, `update`, and `get_state` functionality remains the same. Migrating to v2.0.0's quaternion estimation should should be seamless. If Euler estimation is desired, make sure to use the `EKFEuler` struct in place of the `EKF` struct as follows:
-
-	let mut ekf = EKFEuler::new();
-
-</details>
-
-<details>
-<summary>Requirements</summary>
-
-## Requirements
-
 
 ### Technical Requirements
 
@@ -396,7 +263,7 @@ The measurement Jacobian (∂h∂x​) is a 3×7 matrix that maps changes in the
     
     -   **Dynamic Model, Measurement Model, Dynamic Jacobians, and Measurement Jacobians**:
         -   Derived from the book _"Small Unmanned Aircraft: Theory and Practice"_ by Randall W. Beard and Timothy W. McLain.
-        -   Modified to fit the expanded state vector used in this EKF for quadcopter attitude estimation.
+        -   Modified to use quaternion estimation and fit the expanded state vector used in this EKF for quadcopter attitude estimation.
     -   These models are discussed in further detail later in this document.
 4.  **General Applicability**  
     While this EKF is specifically designed for quadcopter attitude estimation, the principles and structure can be adapted to other systems. However, dynamic and measurement models, along with their respective Jacobians, must be developed for each unique system.
@@ -414,10 +281,15 @@ The measurement Jacobian (∂h∂x​) is a 3×7 matrix that maps changes in the
 
 The following line imports the specific types we'll be using:
 
-	use nalgebra::{Matrix3, Matrix3x6, Matrix6, Vector6, Vector3};
--   `Matrix3`, `Matrix6`: Square matrices of size 3x3 and 6x6, respectively.
--   `Matrix3x6`: A 3x6 rectangular matrix.
--   `Vector6`, `Vector3`: Vectors of size 6 and 3, respectively.
+	use nalgebra::{Matrix, Matrix4, Const, Vector3};
+
+Because of the "odd" size of our state vector (size 7) we must create custom Vector/Martrix types using built in nalgebra methods. This is done here:
+
+    type Vector7 = Matrix<f64, Const<7>, Const<1>, nalgebra::ArrayStorage<f64, 7, 1>>;
+    type Matrix7 = Matrix<f64, Const<7>, Const<7>, nalgebra::ArrayStorage<f64, 7, 7>>;
+    type Matrix3 = Matrix<f64, Const<3>, Const<3>, nalgebra::ArrayStorage<f64, 3, 3>>;
+    type Matrix3x7 = Matrix<f64, Const<3>, Const<7>, nalgebra::ArrayStorage<f64, 3, 7>>;
+    type Vector4 = Matrix<f64, Const<4>, Const<1>, nalgebra::ArrayStorage<f64, 4, 1>>;
 
 These types simplify the process of defining and manipulating matrices and vectors in our EKF implementation.
 
@@ -434,23 +306,19 @@ Rust's privacy model makes all items private by default. To make the `GRAVITY` c
 Rust does not follow a traditional object-oriented paradigm because it lacks inheritance and runtime polymorphism. However, it supports struct-based programming, which allows grouping related data fields into a single logical unit. For our EKF, we define a struct as follows:
 
 	// EKF Struct
-	pub struct EKF {
-	    pub state: Vector6<f64>,                // State Vector: [roll (phi), pitch (theta), yaw (psi), roll rate (p), pitch rate (q), yaw rate (r)]
-	    pub covariance: Matrix6<f64>,           // Covariance matrix P
-	    pub process_noise: Matrix6<f64>,        // Process noise Q
-	    pub measurement_noise: Matrix3<f64>,    // Measurement noise R
-	    pub dt: f64,                            // Time step (0.01 for 100 Hz)
-	    pub airspeed: f64,                      // Airspeed (v_a), initialized at 0
-	}
+    pub struct EKF {
+        pub state: Vector7,                 // State vector: [q0, q1, q2, q3, ωx, ωy, ωz]
+        pub covariance: Matrix7,            // Covariance matrix P
+        pub process_noise: Matrix7,         // Process noise Q
+        pub measurement_noise: Matrix3,     // Measurement noise R
+    }
 
 This struct encapsulates the key components required for the EKF:
 
--   **State Vector (`state`)**: Tracks the system's state, including roll, pitch, yaw angles, and angular rates.
+-   **State Vector (`state`)**: Tracks the system's state, including the quaternion and angular rates.
 -   **Covariance Matrix (`covariance`)**: Represents the uncertainty of the state estimate.
 -   **Process Noise (`process_noise`)**: A matrix representing system noise (Q), tuned for the specific dynamics of the system.
 -   **Measurement Noise (`measurement_noise`)**: A matrix representing sensor noise (R), also tuned experimentally.
--   **Time Step (`dt`)**: The time interval between iterations of the EKF. In this implementation, it is set to 0.01 seconds (100 Hz update rate).
--   **Airspeed (`airspeed`)**: Included for completeness, though it is set to 0 in this implementation.
 
 Key points about Rust structs:
 
@@ -463,51 +331,100 @@ This struct serves as the foundation for our EKF, holding all the necessary data
 
 ### Create a New EKF Instance
 
-In Rust, an instance of a struct is created using an implementation block (`impl`). This allows us to define methods associated with the struct, such as constructors, functions, and utilities. The `new` function below is a commonly used convention for constructing a new instance of the struct.
+In Rust, an instance of a struct is created using an implementation block (`impl`). This allows us to define methods associated with the struct, such as constructors, functions, and utilities. The `new` function is a commonly used convention for constructing a new instance of the struct. When we create a new instance of the EKF struct we need to initialize the initial state vector, the covariance matrix, and the noise matrices Q and R.
 
-	impl EKF {
-    // Create a new EKF instance
-    pub fn new() -> Self {
+The aircraft whose attitude we are estimating may not always be in the same orientation at startup, meaning we need to calculate the attitude as closely as we can to give the EKF a good initial state. If we were to just give the EKF an arbitrary staring point like an identity quaternion (`(1, 0, 0, 0)') it would technically eventually correct itself to the true orientation using the accelerometer's representation of gravitational acceleration, but there will be an inevitable delay in this correction.
+
+An industry standard approach is to calculate a rough estimate of the orientation at startup using the acceleromater data and then allowing the EKF to take over from a more accurate initial state. We do that inside of the `new` function here:
+
+    impl EKF {
+        /// Create a new EKF instance, passing accelerometer data to calculate the initial quaternion (avoids using 0's for initial orientation)
+        pub fn new(accel_data: Option<[f64; 3]>) -> Self {
+            let (q0, q1, q2, q3) = if let Some(accel_data) = accel_data {
+                // Normalize accelerometer vector
+                let norm = (accel_data[0].powi(2) + accel_data[1].powi(2) + accel_data[2].powi(2)).sqrt();
+                let ax = accel_data[0] / norm;
+                let ay = accel_data[1] / norm;
+                let az = -accel_data[2] / norm;
+        
+                // Calculate quaternion from accelerometer data
+                let q0 = (1.0 + az).sqrt() / 2.0;
+                let q1 = -ay / (2.0 * q0);
+                let q2 = ax / (2.0 * q0);
+                let q3: f64 = 0.0; // Yaw is zero since accelerometer data cannot calulcate yaw angles
+
+                // Normalize the quaternion
+                let norm = (q0.powi(2) + q1.powi(2) + q2.powi(2) + q3.powi(2)).sqrt();
+                let q0 = q0 / norm;
+                let q1 = q1 / norm;
+                let q2 = q2 / norm;
+                let q3 = q3 / norm;
+                
+
+                (q0, q1, q2, q3)
+            } else {
+                // Default to identity quaternion
+                (1.0, 0.0, 0.0, 0.0)
+            };
+        
+The EKF struct also calls for the noise matrices Q and R. These matrices are static, meaning they do not change with each iteration of the EKF. We must initialize them at the creation of the EKF instance, and we do so in a way that makes experimantel tuning easier:
+
+        // Initialize process and measurement noise matrices
+        let mut process_noise = Matrix7::zeros();
+        process_noise[(0, 0)] = 1e-7; // q0
+        process_noise[(1, 1)] = 1e-7; // q1
+        process_noise[(2, 2)] = 1e-7; // q2
+        process_noise[(3, 3)] = 1e-7; // q3
+        process_noise[(4, 4)] = 1e-5; // ωx
+        process_noise[(5, 5)] = 1e-5; // ωy
+        process_noise[(6, 6)] = 1e-5; // ωz
+        
+        let mut measurement_noise = Matrix3::zeros();
+        measurement_noise[(0, 0)] = 1e-1; // accel x
+        measurement_noise[(1, 1)] = 1e-1; // accel y
+        measurement_noise[(2, 2)] = 1e-1; // accel z 
+
+Those indices of each matrix are explicitly set because they will be tuned experimentally. Users should run the EKF, observe the behavior of the estimate, and adjust these values accordingly.
+
+Now we can return the EKF instance:
+
         EKF {
-            state: Vector6::zeros(),                        // Initial state: zero roll, pitch, yaw, and angular rates
-            covariance: Matrix6::identity() * 1.0,          // Initialize P with some uncertainty
-            process_noise: Matrix6::identity() * 0.1,       // Process noise Q (TUNED EXPERIMENTALLY)
-            measurement_noise: Matrix3::identity() * 0.2,    // Measurement noise R (TUNED EXPERIMENTALLY)
-            dt: 0.01,
-            airspeed: 0.0,                                  // Assume airspeed is 0 for now; future nonzero airspeed compatibility included
+            state: {
+                let mut state = Vector7::zeros();
+                state[0] = q0;
+                state[1] = q1;
+                state[2] = q2;
+                state[3] = q3;
+                state[4] = 0.0; // ωx
+                state[5] = 0.0; // ωy
+                state[6] = 0.0; // ωz
+                state
+            },
+            covariance: Matrix7::identity() * 1.0, // Initial state covariance
+            process_noise,
+            measurement_noise,
         }
     }
 
-In this `impl` block:
-
--   **`pub` modifier**: Makes the `new` function publicly accessible, allowing you to create an EKF instance from outside this module.
--   **`Self` type alias**: Refers to the struct being implemented (in this case, `EKF`). Returning `Self` is a Rust shorthand for returning the type of the struct.
--   **Initialization**: The `new` function initializes the struct fields with default or starting values, preparing the EKF for its first iteration.
 
 ----------
 
 #### Initialization Details
 
 1.  **State Vector (`state`)**:  
-    The state vector is initialized as a zero vector (`Vector6::zeros()`), meaning all components (roll, pitch, yaw, and angular rates) start at 0. This represents the initial "assumed" state of the system. The state vector is dynamic, meaning it will be updated in every iteration of the EKF to reflect the estimated system state.
+    The state vector is initialized as using a quaternion determined by accelerometer data. This vector represents the initial "assumed" state of the system. The state vector is dynamic, meaning it will be updated in every iteration of the EKF to reflect the estimated system state.
     
 2.  **Covariance Matrix (`covariance`)**:  
-    The covariance matrix is initialized as a 6x6 identity matrix, scaled by a magnitude of `1.0`. This represents initial uncertainty in the state estimation. Like the state vector, the covariance matrix is dynamic and evolves with each EKF iteration based on the prediction and update steps.
+    The covariance matrix is initialized as an identity matrix, scaled by a magnitude of `1.0`. This represents initial uncertainty in the state estimation. Like the state vector, the covariance matrix is dynamic and evolves with each EKF iteration based on the prediction and update steps. 1.0 is an arbitrary uncertainty.
     
 3.  **Process Noise Matrix (`process_noise`)**:  
-    The process noise matrix (`Q`) accounts for uncertainty or errors in the system dynamics model. It is initialized here as a 6x6 identity matrix scaled by `0.1`, but this value is arbitrary and must be tuned experimentally for the specific application. Once tuned, the matrix remains static during EKF iterations.
+    The process noise matrix (`Q`) accounts for uncertainty or errors in the system dynamics model. It is initialized as an identity matrix with indices scaled by some experimentallu tuned values. It remains static during EKF iterations.
     
 4.  **Measurement Noise Matrix (`measurement_noise`)**:  
-    The measurement noise matrix (`R`) accounts for noise or errors in the sensor data. It is similarly initialized as a 3x3 identity matrix scaled by `0.2`, but this value is also arbitrary and requires experimental tuning. Like `Q`, it remains static during EKF iterations.
-    
-5.  **Time Step (`dt`)**:  
-    The time step represents the interval between EKF iterations and should match the frequency of incoming sensor data. In this implementation, `dt` is set to `0.01` seconds, which corresponds to a 100 Hz data rate (common for gyroscope and accelerometer sensors). In more complex implementations, the time step could vary between the prediction and update phases.
-    
-6.  **Airspeed (`airspeed`)**:  
-    Airspeed is included as a variable in the struct for future extensibility. For now, it is set to `0.0` since there are no airspeed sensors in this implementation. However, the equations are designed to incorporate airspeed should it be measured in future applications.
-    
+    The measurement noise matrix (`R`) accounts for noise or errors in the sensor data. It is initialized as an identity matrix with indices scaled by some experimentallu tuned values. Like `Q`, it remains static during EKF iterations.
 
-The `new` method ensures that all fields of the EKF struct are properly initialized with starting values. This approach centralizes the initialization logic, ensuring consistency and reducing errors when creating new EKF instances. It also makes the EKF flexible for future modifications, such as incorporating additional sensors or tuning the noise matrices (`Q` and `R`).
+
+The `new` method ensures that all fields of the EKF struct are properly initialized with starting values. This approach centralizes the initialization logic, ensuring consistency and reducing errors when creating new EKF instances. It also makes the EKF flexible for modifications, such as tuning the noise matrices (`Q` and `R`).
 
 This constructor reflects Rust's strong emphasis on safety and correctness by requiring explicit initialization for all fields, ensuring the EKF starts with well-defined values.  
 
@@ -548,7 +465,6 @@ The **Update Phase** incorporates sensor measurements (in this case, acceleromet
 
 1.  **Compute the Measurement Model, h(x, u):**  
     Use the measurement model to predict what the sensor measurements should be based on the current state estimate.
-    
 2.  **Compute the Innovation:**  
     Calculate the difference between the actual sensor measurements and the predicted measurements from the measurement model. This difference (called the innovation) indicates how much correction is needed.
     
@@ -581,101 +497,65 @@ The **Prediction Phase** estimates the system's next state based on the current 
 
 ### Declaring the Predict Method
 
-We start by creating the `predict` method and declaring it as public using `pub fn`. The method takes a single argument `gyro`, which is an array of size 3 (`[f64; 3]`). This array contains gyroscope data for the x, y, and z axes in units of rad/s (angular velocities).
+We start by creating the `predict` method and declaring it as public using `pub fn`. The method takes 2 arguments `gyro`, which is an array of size 3 (`[f64; 3]`) containing gyroscope data for the x, y, and z axes in units of rad/s (angular velocities) and `dt` which is the timestep in seconds. The time step can be constant if you can guarantee that the system is operating at a constant frequency. For real-world systems it is common to calculate the exact time step during each iteration to ensure the EKF is using the true time step and not an assumed timestep. 
 
-	    pub fn predict(&mut self, gyro: [f64; 3]) {
-	        //Extract state variables for readability
-	        let phi = self.state[0];                // Roll angle
-	        let theta = self.state[1];              // Pitch angle
-	        let _psi = self.state[2];                // Yaw angle
-	        let p = gyro[0];                        // Roll rate (gyro x)
-	        let q = gyro[1];                        // Pitch rate (gyro y)
-	        let r = gyro[2];                        // Yaw rate (gyro z)
-	        let dt = self.dt;                       // dt
+    pub fn predict(&mut self, gyro: [f64; 3], dt: f64) {
 
-
-#### Variable Explanation
-
-1.  **State Variables**:
-    
-    -   `phi` (roll angle) and `theta` (pitch angle) are extracted from the state vector for readability.
-    -   `_psi` (yaw angle) is also extracted but is prefixed with `_` because it is not directly used in the prediction step. The `_` tells the Rust compiler to ignore unused variable warnings. Including it improves code readability and highlights that yaw is part of the state vector.
-2.  **Gyroscope Data**:
-    
-    -   `p`, `q`, and `r` represent the angular velocities (roll rate, pitch rate, and yaw rate) obtained from the gyroscope input. These are essential inputs for the dynamic model.
-3.  **Time Step**:
-    
-    -   `dt` is the time interval between iterations. This value ensures that the integration of angular velocities into angles is time-accurate.
 
 ----------
 
 ### Compute the Dynamic Model: f(x, u)
 
-The dynamic model, f(x,u), describes how the state evolves over time based on the system's dynamics. In the case of the quadcopter, it predicts the roll, pitch, and yaw angles using gyroscope data and the previously estimated angles. This nonlinear propagation model ensures that the state vector reflects realistic dynamics.
+The dynamic model, f(x,u), describes how the state evolves over time based on the system's dynamics. In the case of the quadcopter, it predicts the quaternion using gyroscope data and the previously estimated quaternion. This nonlinear propagation model ensures that the state vector reflects realistic dynamics.
 
 #### Dynamic Model Equations
 
-The dynamic model uses the following equations for roll (ϕ) and pitch (θ) as defined in the book: 
+The dynamic model uses the following equations for quaternion estimation:
 
-![Dynamic Model Equations](images/dynamic_model_equations.png)
+![Quaternion EKF Dynamic Model](images/ekf_quat_dyn_mod.png)
 
-Where:
-- ϕ and θ represent the roll and pitch angles.
--   p, q, and r are the angular velocities (roll rate, pitch rate, and yaw rate) from the gyroscope.
--   ξ<sub>ϕ</sub> and ξ<sub>θ​</sub> are process noise terms, which are accounted for by the process noise matrix Q.
-
-The yaw angle (ψ\) is updated using a simpler propagation model because yaw is not affected by gravity or the roll and pitch dynamics: $ψ˙​=r$
-
-Here, yaw is estimated by directly integrating the yaw rate (r) over time. This integration assumes that yaw dynamics are independent of roll and pitch.
+The quaternion is integrated over time using the gyroscope data, normalized to ensure it remains a valid unit quaternion.
 
 #### Code Implementation
 
 The Rust implementation of the dynamic model is as follows:
 
-		    // Dynamics: f(x, u)
-	        let roll_dot = p + q * phi.sin() * theta.tan() + r * phi.cos() * theta.tan();
-	        let pitch_dot = q * phi.cos() - r * phi.sin();
-	        let yaw_dot = r; // Yaw is simple integration of yaw rate
+        let omega = Vector3::new(gyro[0], gyro[1], gyro[2]); // gyro data vector
+    
+        // Extract current quaternion
+        let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
+    
+        // Compute quaternion derivative: q_dot = 0.5 * Ω(q) * q
+        let omega_matrix = Self::omega_matrix(omega);
+        let q_dot = 0.5 * omega_matrix * q;
+        
+        // Integrate quaternion
+        let q_new = q + q_dot * dt;
+    
+        // Normalize quaternion to ensure quaternion remains unit quaternion
+        // and set the first 4 indexes (quaternion values) to the integrated and normalized
+        // values, q_new
+        let norm = q_new.norm();
+        if norm > 0.0 {
+            let q_new = q_new / norm;
+            self.state[0] = q_new[0];
+            self.state[1] = q_new[1];
+            self.state[2] = q_new[2];
+            self.state[3] = q_new[3];
+        }
+
+        // Update angular velocity in state vector with the gyro measurements
+        self.state[4] = gyro[0];
+        self.state[5] = gyro[1];
+        self.state[6] = gyro[2]; 
 #### Explanation of the Code
 
-1.  **Roll Dynamics**:
-    
-    -   ϕ​ is calculated using p, q, and r as well as the previously estimated roll (ϕ) and pitch (θ).
-    -   The equation accounts for trigonometric relationships between angular velocities and roll/pitch dynamics.
-2.  **Pitch Dynamics**:
-    
-    -   θ is calculated similarly, with dependencies on q, r, and the previously estimated roll (ϕ).
-3.  **Yaw Dynamics**:
-    
-    -   ψ​ is updated directly using r, the yaw rate from the gyroscope. No trigonometric relationships are involved since yaw is independent of gravity.
+1.  **omega**: Gyro data vector using angular velocities around each axis
+2.  **q**: The current quaternion, extracted from the state vector.
+3.  **Normalization**: Quaternions must always be normallized to account for small accumulating errors.
+4.  **State Vector Update**: The state vector is updated with the predicted quaternion and the most recent gyroscope data.
 
-This step computes the dynamic evolution of the state vector using only gyroscope data and the dynamic model. In subsequent steps, this model's output will be used to update the state vector and the covariance matrix.
-
-
-### Update the State Vector
-
-The state vector is updated with the predicted dynamics from the **Dynamic Model**, f(x,u), using the gyroscope data (p, q, and r) as angular velocity inputs. Each component of the state vector is updated iteratively based on the roll (ϕ), pitch (θ), and yaw (ψ) dynamics.
-
-#### Code Implementation
-
-		    // Update state with predicted dynamics
-	        self.state[0] += roll_dot * dt;         // Update roll
-	        self.state[1] += pitch_dot * dt;        // Update pitch
-	        self.state[2] += yaw_dot * dt;          // Update yaw
-	        self.state[3] = p;                      // Update roll rate
-	        self.state[4] = q;                      // Update pitch rate
-	        self.state[5] = r;                      // Update yaw rate
-
-
-
-1.  **Roll, Pitch, and Yaw Angles**:
-    
-    -   The angles (ϕ,θ,ψ) are updated using their respective rates of change ($\dot{ϕ}$, $\dot{θ}$, $\dot{ψ}$) computed in the **Dynamic Model**, scaled by the time step (dt).
-2.  **Angular Velocities**:
-    
-    -   The angular velocities (p,q,r) are directly updated with the gyroscope measurements. This allows the EKF to treat the angular rates as dynamic state variables and refine them based on noise considerations.
-
-This update ensures the state vector reflects the predicted system dynamics at each iteration.
+This step computes the dynamic evolution of the state vector using only gyroscope data and the dynamic model. In subsequent steps, this model's output will be used to update the state vector and the covariance matrix. Each component of the state vector is updated iteratively during this step based on the dynamic model.
 
 ----------
 
@@ -685,53 +565,41 @@ The **Dynamic Jacobian** (∂f/∂x​) is a first-order linear approximation th
 
 #### The Jacobian Matrix
 
-For a state vector of size n, the Jacobian is an n×n  matrix. Each row contains the partial derivatives of the time derivative of one state variable with respect to all components of the state vector.
+For a state vector of size `n`, the Jacobian is an `n×n`  matrix. Each row contains the partial derivatives of the time derivative of one state variable with respect to all components of the state vector.
 
-For example, the **Dynamic Jacobian** in the book (state vector: [ϕ,θ]) is:
+To calculate our Dynamic Jacobian Matrix we use a custom method called `compute_f_jacobian` which receives gyroscope data and timestep, `dt` as input and returns an `nxn` jacobian matrix.
 
-![2x2 Dynamic Jacobian Matrix from Book](images/2by2_dyn_jac.png)
+        // Compute dynamic Jacobian (∂f/∂x) using custom compute_f_jacobian method
+        let f_jacobian = self.compute_f_jacobian(gyro, dt);
 
-Populating this matrix with the partial derivatives derived in the book, we get:
-
-![Populated 2x2 Dynamic Jacobian Matrix from Book](images/2by2_dyn_jac_full.png)
-
-Since our state vector includes six components ([ϕ,θ,ψ,p,q,r]), the Jacobian matrix expands to a 6x6 matrix:
-
-![6x6 Dynamic Jacobian Matrix](images/6by6_dyn_jac.png)
-
-### Our 6x6 Dynamic Jacobian Matrix
-
-In our implementation:
-
-1.  Rows 1-3 correspond to the roll, pitch, and yaw angles. The partial derivatives are derived from the rotational dynamics equations.
-2.  Rows 4-6 correspond to the angular rates (p,q,r) and remain as identity rows. This is because we directly use the angular rates from the gyroscope without propagating them dynamically.
-
-The matrix becomes:
-
-![Populated 6x6 Dynamic Jacobian Matrix](images/6by6_dyn_jac_full.png)
-
-#### Code Implementation
-
-The code implementation for this Jacobian is as follows:
-
-		    // Jacobian of dynamics: ∂f/∂x
-		    let mut f_jacobian = Matrix6::identity();
-		    
-		    // Roll dynamics (first row)
-	        f_jacobian[(0, 0)] = (q * phi.cos() * theta.tan() - r * phi.sin() * theta.tan()) * dt;    // ∂roll_dot/∂phi
-	        f_jacobian[(0, 1)] = ((q * phi.sin() - r * phi.cos()) / theta.cos().powi(2)) * dt;        // ∂roll_dot/∂theta
-	        
-	        // Pitch dynamics (second row)
-	        f_jacobian[(1, 0)] = (-q * phi.sin() - r * phi.cos()) * dt; // ∂pitch_dot/∂phi
-	        f_jacobian[(1, 1)] = 0.0; // No significant dependency of ∂pitch_dot/∂theta
-	        
-	        // Yaw dynamics (third row)
-	        f_jacobian[(2, 2)] = 0.0; // ∂yaw_dot/∂yaw
-	        f_jacobian[(2, 5)] = 1.0; // ∂yaw_dot/∂r
-	        // Angular rates (rows 4, 5, 6) remain identity
-	        // These entries are unaffected by dynamics and stay initialized to 1.0
+        .
+        .
+        .
 
 
+`compute_f_jacobian` method:
+
+    /// Compute the dynamic Jacobian (∂f/∂x)
+    fn compute_f_jacobian(&self, gyro: [f64; 3], dt: f64) -> Matrix7 {
+        let p = gyro[0];
+        let q = gyro[1];
+        let r = gyro[2];
+
+        let mut f = Matrix7::identity();
+        f[(0, 1)] = -p * dt;
+        f[(0, 2)] = -q * dt;
+        f[(0, 3)] = -r * dt;
+        f[(1, 0)] = p * dt;
+        f[(1, 2)] = r * dt;
+        f[(1, 3)] = -q * dt;
+        f[(2, 0)] = q * dt;
+        f[(2, 1)] = -r * dt;
+        f[(2, 3)] = p * dt;
+        f[(3, 0)] = r * dt;
+        f[(3, 1)] = q * dt;
+        f[(3, 2)] = -p * dt;
+        f
+    }    
 
 
 ### Update the Covariance Matrix
@@ -742,10 +610,10 @@ The final step in the **Prediction Phase** is updating the **Covariance Matrix**
 
 where:
 
--   P: The covariance matrix, which was initialized as a 6×6 identity matrix with some magnitude during the EKF initialization.
--   T<sub>out</sub>/N: The time step (dt), which we set to 0.01 seconds (100 Hz).
+-   P: The covariance matrix, which was initialized as an identity matrix with some magnitude during the EKF initialization.
+-   T<sub>out</sub>/N: The time step (dt).
 -   A: The Jacobian matrix of the dynamics, (sometimes F is used) calculated earlier in the **Compute the Dynamic Jacobian** step.
--   Q: The process noise matrix, initialized as a 6×6 identity matrix scaled by 0.1 in this implementation. **The process noise matrix Q must be tuned experimentally** to appropriately reflect the noise in the system dynamics.
+-   Q: The process noise matrix, initialized during the EKF instance creation (`impl` code block). Remember that **the process noise matrix Q must be tuned experimentally** to appropriately reflect the noise in the system dynamics.
 
 ----------
 
@@ -763,11 +631,9 @@ The updated covariance matrix quantifies the propagated uncertainty in the state
 
 The corresponding Rust code for updating the covariance matrix is:
 
-			// Predict covariance: P' = FPFᵀ + Q
+        // Predict covariance using: P' = FPFᵀ + Q
+        self.covariance = f_jacobian * self.covariance * f_jacobian.transpose() + self.process_noise;
 
-			self.covariance =  self.covariance + (dt  * (f_jacobian  *  	self.covariance *  f_jacobian.transpose() +  self.process_noise));
-
-			}
 1.  **Matrix Operations**:
     
     -   FPFᵀ: The covariance matrix is transformed by the Jacobian matrix (F) to propagate the uncertainty through the dynamics.
@@ -776,7 +642,6 @@ The corresponding Rust code for updating the covariance matrix is:
 2.  **Initialization**:
     
     -   For the first iteration, the covariance matrix P is initialized to an identity matrix scaled by 1.0.
-    -   The **process noise matrix Q** is also initialized to an identity matrix scaled by 0.1. You may need to adjust these values based on your specific system.
 3.  **Dynamic Update**:
     
     -   With each iteration, the covariance matrix P is updated to reflect the propagated uncertainty based on the current state, dynamics, and noise.
@@ -795,19 +660,9 @@ The corresponding Rust code for updating the covariance matrix is:
 
 ## Update Phase
 
-The **Update Phase** refines the predicted state estimate by incorporating actual sensor readings. This is where the EKF "corrects" its prediction from the **Prediction Phase** by comparing predicted measurements (from the measurement model h(x,u) with actual measurements (from the accelerometer).
+The **Update Phase** refines the predicted state estimate by incorporating actual sensor readings. This is where the EKF "corrects" its prediction from the **Prediction Phase** by comparing predicted measurements (from the measurement model h(x,u)) with actual measurements (from the accelerometer).
 
-We encapsulate this entire phase in the `update` method. It begins by extracting state variables for readability, similar to the **Prediction Phase**.
-
-		/// Update step (nonlinear measurement model)
-		pub  fn  update(&mut  self, accel: [f64;3]) {
-			// Extract state variables for readability
-			let  phi  =  self.state[0]; // Roll angle
-			let  theta  =  self.state[1]; // Pitch angle
-			let  p  =  self.state[3]; // Roll rate (gyro x)
-			let  q  =  self.state[4]; // Pitch rate (gyro y)
-			let  r  =  self.state[5]; // Yaw rate (gyro z)
-			let  v_a  =  self.airspeed; // Airspeed 9assumed 0 for now)
+We encapsulate this entire phase in the `update` method.
 
 At this point in the EKF, the **state vector** and **covariance matrix** have already been predicted using gyroscope data and the dynamics model. The **Update Phase** uses accelerometer measurements to further refine the state.
 
@@ -815,31 +670,23 @@ At this point in the EKF, the **state vector** and **covariance matrix** have al
 
 ### Compute the Measurement Model: h(x,u)
 
-The **Measurement Model** serves a role similar to the **Dynamics Model, f(x,u)** in the prediction phase. However, instead of predicting the state evolution, the measurement model maps the current state vector to the expected sensor measurements. It defines the relationship between the state components (e.g., roll, pitch, yaw angles) and sensor readings (e.g., accelerometer outputs).
+The **Measurement Model** serves a role similar to the **Dynamics Model, f(x,u)** in the prediction phase. However, instead of predicting the state evolution, the measurement model maps the current state vector to the expected sensor measurements. It defines the relationship between the state components (e.g., the quaternion) and sensor readings (e.g., accelerometer outputs).
 
 -   The measurement model h(x,u) predicts what the sensors **should** measure, given the current state and system dynamics.
+-   This is done by transforming the gravitational vector into the body frame using the rotation matrix derived from the quaternion.
 -   By comparing this prediction with the actual sensor readings, the EKF identifies and corrects discrepancies, improving the state estimate.
 
-For this EKF, the measurement model relates the **state vector** to the expected accelerometer readings. These equations project gravitational acceleration (g) and angular effects (p,q,r) onto the accelerometer's axes using trigonometry. The derived equations from the book are as follows:
+For this EKF, the measurement model relates the **state vector** to the expected accelerometer readings. The measurement model is as follows:
 
-![Measurement Model h(x, u) ](images/meas_mod_eq.png)
+![Quaternion EKF Measurement Model](images/ekf_quat_meas_mod.png)
 
 
 #### Explanation of Components:
 
-1.  **Roll (h<sub>ϕ</sub>)**:
-    
-       
-    - $qV_a \sin{\theta}$: Contribution from angular velocity in the pitch axis scaled by airspeed.
-    - $g \sin{\theta}$: Contribution from gravity projected onto the roll axis.
-2.  **Pitch (h<sub>θ</sub>)**:
-    - $rV_a \cos{\theta}$:	Contribution from angular velocity in the yaw axis scaled by airspeed.
-    - $-pV_a \sin{\theta}$:	Contribution from angular velocity in the roll axis scaled by airspeed.
-    - $-g \cos{\theta} \sin{\phi}$:	Gravity's effect projected onto the pitch axis.
-3.  **Yaw (h<sub>ψ</sub>)**:
-    
-    - $-qV_a \cos{\theta}$: Contribution from angular velocity in the pitch axis scaled by airspeed.
-    - $-g \cos{\theta} \cos{\phi}$: Gravity's effect projected onto the yaw axis.
+1.  **Gravitational Vector (g)**: The gravitational vector represents the direction and magnitude of gravity in the world frame (also called the inertial frame or global frame).
+2.  **Quaternion (q)**: The quaternion `q=[w,x,y,z]` represents the orientation of the body (quadcopter) relative to the world frame. It encodes the rotation needed to transform vectors from the world frame to the body frame.
+3.  **Rotation Matrix (R)**: The rotation matrix `R` is a 3x3 matrix that transforms vectors from the world frame to the body frame. It is derived directly from the quaternion `q`.
+4. **Transpose of the  Rotation Matrix**: The transpose of the rotation matrix transforms vectors from the body frame back to the world frame. Since the accelerometer measures gravity in the body frame, we use the transpose of the rotation matrix to transform the gravitational vector from the world frame to the body frame.
 
 ----------
 
@@ -848,22 +695,39 @@ For this EKF, the measurement model relates the **state vector** to the expected
 
 The code implementation for the measurement model is below:
 
-			// Measurement Model: h(x)
+    pub fn update(&mut self, accel: [f64; 3]) {
+            // Extract quaternion from the state that was estimated with dynamics + gyro data in the predict phase
+            let mut q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
+        
+            // Compute expected accelerometer measurement using the rotation matrix (calculated from quaternion) 
+            // and gravitational matrix: h(x) = R^T * g
+            let gravity = Vector3::new(0.0, 0.0, -GRAVITY);
+            let r_transpose = Self::quaternion_to_rotation_matrix(q).transpose();
+            let accel_expected = r_transpose * gravity;
 
-			let  h_roll  =  v_a  *  q  *  theta.sin() + GRAVITY *  theta.sin(); // q V_a sin(theta) + g sin(theta)
-			let  h_pitch  =  v_a  * (r  *  theta.cos() -  p  *  theta.sin()) - GRAVITY *  theta.cos() *  phi.sin(); // r V_a cos(theta) - p V_a sin(theta) - g cos(theta) sin(phi)
-			let  h_yaw  =  -v_a  *  q  *  theta.cos() - GRAVITY *  theta.cos() *  phi.cos(); // -q V_a cos(theta) - g cos(theta) cos(phi)
+`quaternion_to_rotation_matrix` method:
 
-			let  h  =  Vector3::new(h_roll, h_pitch, h_yaw);
-#### Key Notes:
+    /// Convert quaternion to rotation matrix
+    fn quaternion_to_rotation_matrix(q: Vector4) -> Matrix3 {
+        let q0 = q[0];
+        let q1 = q[1];
+        let q2 = q[2];
+        let q3 = q[3];
 
-1.  **Nonlinear Mapping**: The measurement model is nonlinear because it uses trigonometric functions (sin⁡, cos⁡, tan⁡) to relate state variables to sensor readings.
-2.  **Independent Axes**: Each axis (roll, pitch, yaw) has its own contributions based on gravity and angular rates.
-3.  **Code Implementation**:
-    -   h<sub>ϕ</sub>, h<sub>θ</sub>, h<sub>ψ</sub>​: Each component is computed separately for clarity.
-    -   The final h(x,u) is a 3×1 vector, matching the dimension of the accelerometer measurements.
+        Matrix3::new(
+            1.0 - 1.0 * (q2 * q2 + q3 * q3),
+            2.0 * (q1 * q2 - q0 * q3),
+            2.0 * (q1 * q3 + q0 * q2),
+            2.0 * (q1 * q2 + q0 * q3),
+            1.0 - 1.0 * (q1 * q1 + q3 * q3),
+            2.0 * (q2 * q3 - q0 * q1),
+            2.0 * (q1 * q3 - q0 * q2),
+            2.0 * (q2 * q3 + q0 * q1),
+            1.0 - 1.0 * (q1 * q1 + q2 * q2),
+        )
+    }
 
-In the **Update Phase**, this measurement model is a key step. It allows the EKF to compare predicted measurements h(x,u) with actual measurements from the accelerometer, leading to the calculation of the **Innovation** (discrepancy between predicted and actual sensor readings).
+The measurement model uses the rotation matrix derived from the quaternion to transform the gravitational vector into the body frame. This provides the expected accelerometer measurement, which is compared to the actual accelerometer reading to update the state estimate in the EKF. This approach ensures that the estimated orientation aligns with the observed sensor data.
 
 ### Compute Innovation
 
@@ -892,15 +756,13 @@ The innovation directly influences the Kalman gain (K) and therefore determines 
 
 Below is the implementation of the innovation calculation in Rust:
 
-			// Innovation: y = z - h(x)
-
-			let  z  =  Vector3::new(accel[0], accel[1], 0.0); // Measured accelerometer data; yaw left as 0
-			let  y  =  z  -  h;
-
+        // Compute the innovation: y = z - h(x)
+        let z = Vector3::new(accel[0], accel[1], accel[2]); // Measured accelerometer data
+        let innovation = z - accel_expected;
 
 ### Compute the Measurement Jacobian
 
-The **Measurement Jacobian** quantifies how the predicted measurements h(x,u) change with respect to the state vector variables. In simpler terms, it determines the sensitivity of the predicted sensor outputs to small changes in the state vector.
+The **Measurement Jacobian (∂h∂x​)** is a 3×7 matrix that maps changes in the state vector to changes in the predicted accelerometer readings. Its components are derived from the quaternion-to-rotation matrix conversion and gravitational influence.
 
 #### Purpose of the Measurement Jacobian
 
@@ -911,64 +773,38 @@ The Jacobian is crucial for:
 
 ----------
 
-#### Measurement Jacobian in the Book
-
-The book uses a smaller state vector with only roll and pitch angles (ϕ,θ) and defines a 3×2 Jacobian matrix:
-
-![3x2 Measurement Jacobian Matrix from Book](images/3x2_meas_jac.png)
-
-
-Here:
-
--   **Rows** correspond to the measurement outputs (h<sub>roll</sub>, h<sub>pitch</sub>, h<sub>yaw</sub>).
--   **Columns** correspond to the two components of the state vector (roll and pitch angles).
-
-Each entry is the partial derivative of one measurement output with respect to one state vector component.
-
-----------
-
-#### Adapting the Measurement Jacobian for a Larger State Vector
-
-Since our state vector has 6 components (ϕ,θ,ψ,p,q,r), the Jacobian expands to a 3×6 matrix. However:
-
--   We do not update yaw (ψ) due to the absence of a magnetometer, GPS, or vision sensor. **Column 3 (yaw) is all zeros.**
--   We do not update angular rates (p,q,r) due to the absence of a second gyroscope. **Columns 4–6 are all zeros.**
-
-The resulting measurement Jacobian becomes:
-
-![3x6 Measurement Jacobian Matrix](images/3by6_meas_jac.png)
-
-
-This design makes the EKF modular and expandable:
-
--   A magnetometer, GPS, or vision system can be added later to update yaw without rewriting the EKF.
--   A second gyroscope could be added to update angular rates without requiring major modifications.
-
-----------
-
 #### Code Implementation
 
-Below is the Rust implementation of the 3×6 Measurement Jacobian. A 3×6 matrix of zeros is initialized, and only the required indices are populated with partial derivatives:
+Below is the Rust implementation of the 3×7 Measurement Jacobian.
 
-rust
-
-Copy code
-
-			// Jacobian of measurement model: ∂h/∂x
-			let  mut  h_jacobian  =  Matrix3x6::zeros();
-
-			// Row 1: h_roll (qV_a sin θ + g sin θ)
-			h_jacobian[(0, 1)] =  v_a  *  q  *  theta.cos() + GRAVITY *  theta.cos(); // ∂h_roll/∂theta
-
-			// Row 2: h_pitch (rV_a cos θ - pV_a cos θ + g sin φ sin θ)
-			h_jacobian[(1, 0)] =  -GRAVITY *  phi.cos() *  theta.cos(); // ∂h_pitch/∂phi
-			h_jacobian[(1, 1)] =  -r  *  v_a  *  theta.sin() -  p  *  v_a  *  theta.cos() + GRAVITY *  phi.sin() *  theta.sin(); // ∂h_pitch/∂theta			  
-
-			// Row 3: h_yaw (-qV_a cos θ - g cos θ cos φ)
-			h_jacobian[(2, 0)] = GRAVITY *  phi.sin() *  theta.cos(); // ∂h_yaw/∂phi
-			h_jacobian[(2, 1)] = (q  *  v_a  + GRAVITY *  phi.cos()) *  theta.sin(); // ∂h_yaw/∂thetas
+        // Compute measurement Jacobian (∂h/∂x) using the custom compute_h_jacobian method
+        let h_jacobian = self.compute_h_jacobian(q);
 
 
+`compute_h_jacobian` method:
+
+    /// Compute the measurement Jacobian (∂h/∂x)
+    fn compute_h_jacobian(&self, q: Vector4) -> Matrix3x7 {
+        let q0 = q[0];
+        let q1 = q[1];
+        let q2 = q[2];
+        let q3 = q[3];
+
+        let mut h = Matrix3x7::zeros();
+        h[(0, 0)] = 2.0 * (-GRAVITY * q2);
+        h[(0, 1)] = 2.0 * (GRAVITY * q3);
+        h[(0, 2)] = 2.0 * (-GRAVITY * q0);
+        h[(0, 3)] = 2.0 * (GRAVITY * q1);
+        h[(1, 0)] = 2.0 * (GRAVITY * q1);
+        h[(1, 1)] = 2.0 * (GRAVITY * q0);
+        h[(1, 2)] = 2.0 * (GRAVITY * q3);
+        h[(1, 3)] = 2.0 * (GRAVITY * q2);
+        h[(2, 0)] = 2.0 * (GRAVITY * q0);
+        h[(2, 1)] = 2.0 * (-GRAVITY * q1);
+        h[(2, 2)] = 2.0 * (-GRAVITY * q2);
+        h[(2, 3)] = 2.0 * (-GRAVITY * q3);
+        h
+    }
 
 
 ### Compute the Innovation Covariance
@@ -1005,8 +841,9 @@ where:
 
 Below is the Rust implementation of computing the Innovation Covariance:
 
-			// Innovation covariance: S = HPHᵀ + R
-			let  s  =  h_jacobian  *  self.covariance *  h_jacobian.transpose() +  self.measurement_noise;
+        // Compute innovation covariance: S = HPHᵀ + R
+        let s = h_jacobian * self.covariance * h_jacobian.transpose() + self.measurement_noise;
+    
 #### Key Points:
 
 -   The innovation covariance S directly impacts the Kalman Gain (K) calculation, which determines how much the state estimate should be adjusted in the update phase.
@@ -1061,8 +898,8 @@ where:
 
 Below is the Rust implementation of the Kalman Gain:	
 		  
-			// Kalman gain: K = P Hᵀ S⁻¹
-			let  k  =  self.covariance *  h_jacobian.transpose() *  s.try_inverse().unwrap();
+        // Compute Kalman gain: K = P Hᵀ S⁻¹
+        let k = self.covariance * h_jacobian.transpose() * s.try_inverse().unwrap();
 
 The Kalman Gain serves as the bridge between prediction and measurement, dynamically adjusting the system's state estimate and ensuring robust performance in a noisy environment. It reflects the adaptability and power of the EKF.
 
@@ -1087,12 +924,13 @@ The Kalman Gain (K) dynamically determines the influence of the measurement vers
 
 In our implementation, the output of this step is the **updated state vector**, which includes:
 
--   Roll angle (ϕ)
--   Pitch angle (θ)
--   Yaw angle (ψ)
--   Roll rate ( p )
--   Pitch rate ( q )
--   Yaw rate ( r )
+-   **w**: The real part of the quaternion
+-   **x**: The coefficient of the `i` component.
+-   **y**: The coefficient of the `j` component.
+-   **z**: The coefficient of the `k` component.
+-   **Roll Rate**: Angular velocity around the x-axis.
+-   **Pitch Rate**: Angular velocity around the y-axis.
+-   **Yaw Rate**: Angular velocity around the z-axis.
 
 ----------
 
@@ -1100,8 +938,8 @@ In our implementation, the output of this step is the **updated state vector**, 
 
 Below is the Rust implementation of updating the state vector:
 
-			// Update state: x = x + Ky
-			self.state =  self.state +  k  *  y;
+        // Update state vector with new quaterion
+        self.state += k * innovation;
 
 
 ### Update the Covariance Matrix
@@ -1136,14 +974,31 @@ This equation ensures that:
 
 Below is the Rust implementation of updating the covariance matrix:
 
-			// Update covariance: P = (I - KH)P
-			let  i  =  Matrix6::identity();
-			self.covariance = (i  -  k  *  h_jacobian) *  self.covariance;
+        // Update covariance: P = (I - KH)P
+        let i = Matrix7::identity();
+        self.covariance = (i - k * h_jacobian) * self.covariance;
+    
 #### Output:
 
 The updated covariance matrix P now reflects the reduced uncertainty in the state estimate and prepares the EKF for the next prediction and update cycle.
 
 ----------
+
+### Normalize the Quaternion
+
+Quaternions must always be normalzied to avoid accumulating errors. It is done here at the end of the update phase just as was done at the end of the predict phase.
+
+        let norm = q.norm();
+        if norm > 0.0 {
+            q = q / norm;
+        }
+    
+        self.state[0] = q[0] / norm;
+        self.state[1] = q[1] / norm;
+        self.state[2] = q[2] / norm;
+        self.state[3] = q[3] / norm;
+        
+    }
 
 These steps complete the **update phase** of the Extended Kalman Filter. With the **prediction phase** and **update phase** combined, the EKF is now ready to iterate and continuously refine its state estimate in real-time.
 
@@ -1159,7 +1014,7 @@ These steps complete the **update phase** of the Extended Kalman Filter. With th
 
 # Implementation and Results
 
-The `rust-ekf` v2.0.0 Quaternion-based Extended Kalman Filter attitude estimation was implemented in a ROS2-based quadcopter project using a raspberry pi and ICM-20948 IMU. 
+The `rust-ekf` Quaternion-based Extended Kalman Filter attitude estimation was implemented in a ROS2-based quadcopter project using a raspberry pi and ICM-20948 IMU. 
 
 A ROS2 node was written in Rust to subscribe to raw IMU data from an ICM-20948, process the data with the EKF's `predict` and `update` methods, and publish the resulting quaternion to a new ROS2 topic.
 
@@ -1179,9 +1034,7 @@ See the visualization below:
 # Conclusion
 
 
-The implementation of this Extended Kalman Filter (EKF) for quadcopter attitude estimation combines theoretical foundations, deliberate design decisions, and practical coding in Rust. Building on the work of Randall W. Beard and Timothy W. McLain in _Small Unmanned Aircraft: Theory and Practice_, this project expanded their framework in v1.0.0 to a six-component state vector, including yaw angle and angular rates, demonstrating its adaptability to more complex use cases. 
-
-Version 2.0.0 of `rust-ekf` expanded upon the Euler implementation with a Quaternion-based implementation, effectively eliminating technical issues like gimbal lock and angle wrapping. The EKF is being used in a real-world robotics application with reliable results.  
+The implementation of this Extended Kalman Filter (EKF) for quadcopter attitude estimation combines theoretical foundations, deliberate design decisions, and practical coding in Rust. 
 
 The design is modular and future-proof, enabling seamless integration of additional sensors, such as GPS or vision systems, without major rewrites. Incorporating angular velocity estimates directly into the state vector leverages the EKF’s ability to filter noisy gyroscope data, ensuring more reliable attitude estimation. This capability is crucial in robotics, where precise state estimation is essential for stable flight, navigation, and control.
 

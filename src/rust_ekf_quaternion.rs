@@ -50,10 +50,10 @@ impl EKF {
     
         // Initialize process and measurement noise matrices
         let mut process_noise = Matrix7::zeros();
-        process_noise[(0, 0)] = 1e-5; // q0
-        process_noise[(1, 1)] = 1e-5; // q1
-        process_noise[(2, 2)] = 1e-5; // q2
-        process_noise[(3, 3)] = 1e-5; // q3
+        process_noise[(0, 0)] = 1e-7; // q0
+        process_noise[(1, 1)] = 1e-7; // q1
+        process_noise[(2, 2)] = 1e-7; // q2
+        process_noise[(3, 3)] = 1e-7; // q3
         process_noise[(4, 4)] = 1e-5; // ωx
         process_noise[(5, 5)] = 1e-5; // ωy
         process_noise[(6, 6)] = 1e-5; // ωz
@@ -61,8 +61,8 @@ impl EKF {
         let mut measurement_noise = Matrix3::zeros();
         measurement_noise[(0, 0)] = 1e-1; // accel x
         measurement_noise[(1, 1)] = 1e-1; // accel y
-        measurement_noise[(2, 2)] = 1e-1; // accel z
-        
+        measurement_noise[(2, 2)] = 1e-1; // accel z 
+
     
         EKF {
             state: {
@@ -118,6 +118,8 @@ impl EKF {
 
         // Predict covariance using: P' = FPFᵀ + Q
         self.covariance = f_jacobian * self.covariance * f_jacobian.transpose() + self.process_noise;
+
+
     }
 
     /// Update step using accelerometer data
@@ -170,7 +172,6 @@ impl EKF {
         let p = gyro[0];
         let q = gyro[1];
         let r = gyro[2];
-        //let dt = self.dt;
 
         let mut f = Matrix7::identity();
         f[(0, 1)] = -p * dt;
@@ -247,5 +248,5 @@ impl EKF {
         self.state.clone() // Return a copy of the state vector
     }
     
-    
+
 }
