@@ -1,5 +1,6 @@
 ﻿# Extended Kalman Filter for Quadcopter Attitude Estimation in Rust
 
+![Quaternion EKF RVIZ2 Demonstration](images/ekf_quat_rviz2_demo.gif)
 
 ## Abstract
 
