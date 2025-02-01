@@ -206,6 +206,8 @@ The EKF implementation has been designed with modularity and future expandabilit
 
 </details>
 
+<details>
+<summary>Requirements</summary>
 ----------
 
 ### Technical Requirements
