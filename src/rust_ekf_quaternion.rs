@@ -59,9 +59,9 @@ impl EKF {
         process_noise[(6, 6)] = 1e-3; // ωz
         
         let mut measurement_noise = Matrix3::zeros();
-        measurement_noise[(0, 0)] = 1e-1; // accel x
-        measurement_noise[(1, 1)] = 1e-1; // accel y
-        measurement_noise[(2, 2)] = 1e-1; // accel z 
+        measurement_noise[(0, 0)] = 5e-2; // accel x
+        measurement_noise[(1, 1)] = 5e-2; // accel y
+        measurement_noise[(2, 2)] = 5e-2; // accel z 
 
     
         EKF {
