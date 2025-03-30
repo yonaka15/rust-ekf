@@ -54,9 +54,9 @@ impl EKF {
         process_noise[(1, 1)] = 1e-7; // q1
         process_noise[(2, 2)] = 1e-7; // q2
         process_noise[(3, 3)] = 1e-7; // q3
-        process_noise[(4, 4)] = 1e-5; // ωx
-        process_noise[(5, 5)] = 1e-5; // ωy
-        process_noise[(6, 6)] = 1e-5; // ωz
+        process_noise[(4, 4)] = 1e-3; // ωx
+        process_noise[(5, 5)] = 1e-3; // ωy
+        process_noise[(6, 6)] = 1e-3; // ωz
         
         let mut measurement_noise = Matrix3::zeros();
         measurement_noise[(0, 0)] = 1e-1; // accel x
@@ -82,64 +82,82 @@ impl EKF {
         }
     }
     
-    /// Predict step using gyro data, pass real dt (computed dynamically)
+    /// Predict step using gyro data. Pass real dt (computed dynamically)
     pub fn predict(&mut self, gyro: [f64; 3], dt: f64) {
-        let omega = Vector3::new(gyro[0], gyro[1], gyro[2]); // gyro data vector
-    
-        // Extract current quaternion
+        // 1. Convert gyro readings into a vector (angular velocities in rad/s)
+        let omega = Vector3::new(gyro[0], gyro[1], gyro[2]);
+
+        // 2. Extract current quaternion from the state vector
         let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
-    
-        // Compute quaternion derivative: q_dot = 0.5 * Ω(q) * q
+
+        // 3. Compute quaternion derivative: q̇ = 0.5 * Ω(ω) * q
         let omega_matrix = Self::omega_matrix(omega);
         let q_dot = 0.5 * omega_matrix * q;
-        
-        // Integrate quaternion
-        let q_new = q + q_dot * dt;
-    
-        // Normalize quaternion to ensure quaternion remains unit quaternion
-        // and set the first 4 indexes (quaternion values) to the integrated and normalized
-        // values, q_new
-        self.state.fixed_rows_mut::<4>(0).copy_from(&(q_new));
-        Self::normalize_quaternion_in_state(&mut self.state);
-        
-    
-        // Update angular velocity in state vector with the gyro measurements
-        self.state[4] = gyro[0];
-        self.state[5] = gyro[1];
-        self.state[6] = gyro[2]; 
 
-        // Compute dynamic Jacobian (∂f/∂x) using custom compute_f_jacobian method
+        // 4. Integrate quaternion using Euler integration: q_new = q + q̇ * dt
+        let q_new = q + q_dot * dt;
+
+        // 5. Update the quaternion in the state vector (first 4 elements)
+        self.state.fixed_rows_mut::<4>(0).copy_from(&q_new);
+
+        // 6. Normalize quaternion to maintain unit length (numerical stability)
+        Self::normalize_quaternion_in_state(&mut self.state);
+
+        // 7. Update angular rates in the state vector with the latest gyro readings
+        self.state[4] = gyro[0]; // ωx
+        self.state[5] = gyro[1]; // ωy
+        self.state[6] = gyro[2]; // ωz
+
+        // 8. Compute dynamics Jacobian ∂f/∂x based on current gyro readings and dt
         let f_jacobian = self.compute_f_jacobian(gyro, dt);
 
-        // Predict covariance using: P' = FPFᵀ + Q
+        // 9. Propagate uncertainty using the covariance update: P' = FPFᵀ + Q
         self.covariance = f_jacobian * self.covariance * f_jacobian.transpose() + self.process_noise;
-
-
     }
+
 
     /// Update step using accelerometer data
     pub fn update(&mut self, accel: [f64; 3]) {
-        // Get gravity and measured acceleration
+        // 1. Predict expected measurement (accel_expected) from quaternion
         let gravity = Vector3::new(0.0, 0.0, -GRAVITY);
         let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
         let r_transpose = Self::quaternion_to_rotation_matrix(q).transpose();
         let accel_expected = r_transpose * gravity;
 
+        // 2. Innovation: difference between real sensor data and predicted sensor output
         let z = Vector3::new(accel[0], accel[1], accel[2]);
         let innovation = z - accel_expected;
 
+        // 3. Compute Measurement Jacobian
         let h_jacobian = self.compute_h_jacobian(q);
-        let s = h_jacobian * self.covariance * h_jacobian.transpose() + self.measurement_noise;
-        let k = self.covariance * h_jacobian.transpose() * s.try_inverse().unwrap();
 
-        // Apply update
+        // 4. Compute Innovation Covariance
+        let s = h_jacobian * self.covariance * h_jacobian.transpose() + self.measurement_noise;
+
+        // 5. Try to invert S
+        let s_inv = match s.try_inverse() {
+            Some(inv) => inv,
+            None => {
+                // Matrix not invertible — skip update to maintain stability
+                eprintln!("Warning: Innovation covariance matrix is non-invertible. Skipping EKF update step.");
+                return;
+            }
+        };
+
+        // 6. Compute Kalman Gain
+        let k = self.covariance * h_jacobian.transpose() * s_inv;
+
+        // 7. Update state estimate
         self.state += k * innovation;
 
+        // 8. Update covariance estimate
         let i = Matrix7::identity();
         self.covariance = (i - k * h_jacobian) * self.covariance;
 
+        // 9. Normalize quaternion
         Self::normalize_quaternion_in_state(&mut self.state);
     }
+
 
 
     /// Compute the dynamic Jacobian (∂f/∂x)
