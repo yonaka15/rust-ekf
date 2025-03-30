@@ -99,14 +99,9 @@ impl EKF {
         // Normalize quaternion to ensure quaternion remains unit quaternion
         // and set the first 4 indexes (quaternion values) to the integrated and normalized
         // values, q_new
-        let norm = q_new.norm();
-        if norm > 0.0 {
-            let q_new = q_new / norm;
-            self.state[0] = q_new[0];
-            self.state[1] = q_new[1];
-            self.state[2] = q_new[2];
-            self.state[3] = q_new[3];
-        }
+        self.state.fixed_rows_mut::<4>(0).copy_from(&(q_new));
+        Self::normalize_quaternion_in_state(&mut self.state);
+        
     
         // Update angular velocity in state vector with the gyro measurements
         self.state[4] = gyro[0];
@@ -124,49 +119,29 @@ impl EKF {
 
     /// Update step using accelerometer data
     pub fn update(&mut self, accel: [f64; 3]) {
-        // Extract quaternion from the state that was estimated with dynamics + gyro data in the predict phase
-        let mut q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
-    
-        // Compute expected accelerometer measurement using the rotation matrix (calculated from quaternion) 
-        // and gravitational matrix: h(x) = R^T * g
+        // Get gravity and measured acceleration
         let gravity = Vector3::new(0.0, 0.0, -GRAVITY);
+        let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
         let r_transpose = Self::quaternion_to_rotation_matrix(q).transpose();
         let accel_expected = r_transpose * gravity;
-    
-        // Compute the innovation: y = z - h(x)
-        let z = Vector3::new(accel[0], accel[1], accel[2]); // Measured accelerometer data
+
+        let z = Vector3::new(accel[0], accel[1], accel[2]);
         let innovation = z - accel_expected;
-    
-        // Compute measurement Jacobian (∂h/∂x) using the custom compute_h_jacobian method
+
         let h_jacobian = self.compute_h_jacobian(q);
-    
-        // Compute innovation covariance: S = HPHᵀ + R
         let s = h_jacobian * self.covariance * h_jacobian.transpose() + self.measurement_noise;
-    
-        // Compute Kalman gain: K = P Hᵀ S⁻¹
         let k = self.covariance * h_jacobian.transpose() * s.try_inverse().unwrap();
-    
-        // Update state vector with new quaterion
+
+        // Apply update
         self.state += k * innovation;
 
-        // Update covariance: P = (I - KH)P
         let i = Matrix7::identity();
         self.covariance = (i - k * h_jacobian) * self.covariance;
-    
-        // Normalize quaternion after correction (always normalize the quaternion after predict and update phase
-        // to avoid accumulating error and ensure quaternion remains unit value)
-        let norm = q.norm();
-        if norm > 0.0 {
-            q = q / norm;
-        }
-    
-        self.state[0] = q[0] / norm;
-        self.state[1] = q[1] / norm;
-        self.state[2] = q[2] / norm;
-        self.state[3] = q[3] / norm;
-        
+
+        Self::normalize_quaternion_in_state(&mut self.state);
     }
-    
+
+
     /// Compute the dynamic Jacobian (∂f/∂x)
     fn compute_f_jacobian(&self, gyro: [f64; 3], dt: f64) -> Matrix7 {
         let p = gyro[0];
@@ -212,6 +187,17 @@ impl EKF {
         h
     }
 
+    fn normalize_quaternion_in_state(state: &mut Vector7) {
+        let q = Vector4::new(state[0], state[1], state[2], state[3]);
+        let norm = q.norm();
+        if norm > 0.0 {
+            let q_normalized = q / norm;
+            state.fixed_rows_mut::<4>(0).copy_from(&q_normalized);
+        }
+    }
+    
+
+
     /// Convert quaternion to rotation matrix
     fn quaternion_to_rotation_matrix(q: Vector4) -> Matrix3 {
         let q0 = q[0];
@@ -220,15 +206,17 @@ impl EKF {
         let q3 = q[3];
 
         Matrix3::new(
-            1.0 - 1.0 * (q2 * q2 + q3 * q3),
+            1.0 - 2.0 * (q2 * q2 + q3 * q3),
             2.0 * (q1 * q2 - q0 * q3),
             2.0 * (q1 * q3 + q0 * q2),
+
             2.0 * (q1 * q2 + q0 * q3),
-            1.0 - 1.0 * (q1 * q1 + q3 * q3),
+            1.0 - 2.0 * (q1 * q1 + q3 * q3),
             2.0 * (q2 * q3 - q0 * q1),
+
             2.0 * (q1 * q3 - q0 * q2),
             2.0 * (q2 * q3 + q0 * q1),
-            1.0 - 1.0 * (q1 * q1 + q2 * q2),
+            1.0 - 2.0 * (q1 * q1 + q2 * q2),
         )
     }
 

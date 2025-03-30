@@ -22,7 +22,7 @@ The `rust-ekf` library can be used in your Rust projects to implement an Extende
 You can include `rust-ekf` as a dependency in your `Cargo.toml` by referencing the GitHub repository. Add the following lines to your `Cargo.toml`:
 
 	[dependencies]
-	rust-ekf = { git = "https://github.com/OrlandoQuintana/rust-ekf.git" }
+	rust-ekf = { git = "https://github.com/OrlandoQuintana/rust-ekf" }
 This tells Cargo to pull the library directly from the GitHub repository and use it in your project.
 
 ----------
