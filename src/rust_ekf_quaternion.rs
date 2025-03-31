@@ -1,4 +1,5 @@
 use nalgebra::{Matrix, Matrix4, Const, Vector3};
+use nalgebra::UnitQuaternion;
 
 // Define custom types for fixed-size matrices and vectors
 
@@ -50,18 +51,18 @@ impl EKF {
     
         // Initialize process and measurement noise matrices
         let mut process_noise = Matrix7::zeros();
-        process_noise[(0, 0)] = 1e-7; // q0
-        process_noise[(1, 1)] = 1e-7; // q1
-        process_noise[(2, 2)] = 1e-7; // q2
-        process_noise[(3, 3)] = 1e-7; // q3
-        process_noise[(4, 4)] = 1e-3; // ωx
-        process_noise[(5, 5)] = 1e-3; // ωy
-        process_noise[(6, 6)] = 1e-3; // ωz
+        process_noise[(0, 0)] = 0.001; // q0
+        process_noise[(1, 1)] = 0.001; // q1
+        process_noise[(2, 2)] = 0.001; // q2
+        process_noise[(3, 3)] = 0.001; // q3
+        process_noise[(4, 4)] = 1e-2; // bx
+        process_noise[(5, 5)] = 1e-2; // by
+        process_noise[(6, 6)] = 0.0; // bz
         
         let mut measurement_noise = Matrix3::zeros();
-        measurement_noise[(0, 0)] = 5e-2; // accel x
-        measurement_noise[(1, 1)] = 5e-2; // accel y
-        measurement_noise[(2, 2)] = 5e-2; // accel z 
+        measurement_noise[(0, 0)] = 0.03; // accel x
+        measurement_noise[(1, 1)] = 0.03; // accel y
+        measurement_noise[(2, 2)] = 0.03; // accel z 
 
     
         EKF {
@@ -71,9 +72,9 @@ impl EKF {
                 state[1] = q1;
                 state[2] = q2;
                 state[3] = q3;
-                state[4] = 0.0; // ωx
-                state[5] = 0.0; // ωy
-                state[6] = 0.0; // ωz
+                state[4] = 0.0; // bx
+                state[5] = 0.0; // by
+                state[6] = 0.0; // bz
                 state
             },
             covariance: Matrix7::identity() * 1.0, // Initial state covariance
@@ -84,101 +85,103 @@ impl EKF {
     
     /// Predict step using gyro data. Pass real dt (computed dynamically)
     pub fn predict(&mut self, gyro: [f64; 3], dt: f64) {
-        // 1. Convert gyro readings into a vector (angular velocities in rad/s)
-        let omega = Vector3::new(gyro[0], gyro[1], gyro[2]);
-
-        // 2. Extract current quaternion from the state vector
+        let bias = self.state.fixed_rows::<3>(4).clone_owned(); // [bx, by, bz]
+        let omega = Vector3::new(gyro[0], gyro[1], gyro[2]) - bias;
+    
         let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
-
-        // 3. Compute quaternion derivative: q̇ = 0.5 * Ω(ω) * q
         let omega_matrix = Self::omega_matrix(omega);
         let q_dot = 0.5 * omega_matrix * q;
-
-        // 4. Integrate quaternion using Euler integration: q_new = q + q̇ * dt
         let q_new = q + q_dot * dt;
-
-        // 5. Update the quaternion in the state vector (first 4 elements)
+    
         self.state.fixed_rows_mut::<4>(0).copy_from(&q_new);
-
-        // 6. Normalize quaternion to maintain unit length (numerical stability)
         Self::normalize_quaternion_in_state(&mut self.state);
-
-        // 7. Update angular rates in the state vector with the latest gyro readings
-        self.state[4] = gyro[0]; // ωx
-        self.state[5] = gyro[1]; // ωy
-        self.state[6] = gyro[2]; // ωz
-
-        // 8. Compute dynamics Jacobian ∂f/∂x based on current gyro readings and dt
+    
         let f_jacobian = self.compute_f_jacobian(gyro, dt);
-
-        // 9. Propagate uncertainty using the covariance update: P' = FPFᵀ + Q
         self.covariance = f_jacobian * self.covariance * f_jacobian.transpose() + self.process_noise;
+    
+        self.lock_yaw(); // ✅ centralized yaw suppression
     }
+    
 
 
     /// Update step using accelerometer data
     pub fn update(&mut self, accel: [f64; 3]) {
-        // 1. Predict expected measurement (accel_expected) from quaternion
         let gravity = Vector3::new(0.0, 0.0, -GRAVITY);
         let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
         let r_transpose = Self::quaternion_to_rotation_matrix(q).transpose();
         let accel_expected = r_transpose * gravity;
-
-        // 2. Innovation: difference between real sensor data and predicted sensor output
+    
         let z = Vector3::new(accel[0], accel[1], accel[2]);
         let innovation = z - accel_expected;
-
-        // 3. Compute Measurement Jacobian
+    
         let h_jacobian = self.compute_h_jacobian(q);
-
-        // 4. Compute Innovation Covariance
         let s = h_jacobian * self.covariance * h_jacobian.transpose() + self.measurement_noise;
-
-        // 5. Try to invert S
-        let s_inv = match s.try_inverse() {
-            Some(inv) => inv,
-            None => {
-                // Matrix not invertible — skip update to maintain stability
-                eprintln!("Warning: Innovation covariance matrix is non-invertible. Skipping EKF update step.");
-                return;
-            }
-        };
-
-        // 6. Compute Kalman Gain
-        let k = self.covariance * h_jacobian.transpose() * s_inv;
-
-        // 7. Update state estimate
-        self.state += k * innovation;
-
-        // 8. Update covariance estimate
-        let i = Matrix7::identity();
-        self.covariance = (i - k * h_jacobian) * self.covariance;
-
-        // 9. Normalize quaternion
-        Self::normalize_quaternion_in_state(&mut self.state);
+    
+        if let Some(s_inv) = s.try_inverse() {
+            let k = self.covariance * h_jacobian.transpose() * s_inv;
+            self.state += k * innovation;
+            self.covariance = (Matrix7::identity() - k * h_jacobian) * self.covariance;
+    
+            Self::normalize_quaternion_in_state(&mut self.state);
+            self.lock_yaw(); // ✅ centralized yaw suppression
+        } else {
+            eprintln!("Warning: Skipping EKF update — non-invertible innovation covariance.");
+        }
     }
+    
 
 
 
     /// Compute the dynamic Jacobian (∂f/∂x)
     fn compute_f_jacobian(&self, gyro: [f64; 3], dt: f64) -> Matrix7 {
-        let p = gyro[0];
-        let q = gyro[1];
-        let r = gyro[2];
+        let q0 = self.state[0];
+        let q1 = self.state[1];
+        let q2 = self.state[2];
+        let q3 = self.state[3];
+        let bx = self.state[4];
+        let by = self.state[5];
+        let bz = self.state[6];
+
+        let p = gyro[0] - bx;
+        let q = gyro[1] - by;
+        let r = gyro[2] - bz;
 
         let mut f = Matrix7::identity();
+
+        // Quaternion dynamics wrt quaternion
         f[(0, 1)] = -p * dt;
         f[(0, 2)] = -q * dt;
         f[(0, 3)] = -r * dt;
-        f[(1, 0)] = p * dt;
-        f[(1, 2)] = r * dt;
+
+        f[(1, 0)] =  p * dt;
+        f[(1, 2)] =  r * dt;
         f[(1, 3)] = -q * dt;
-        f[(2, 0)] = q * dt;
+
+        f[(2, 0)] =  q * dt;
         f[(2, 1)] = -r * dt;
-        f[(2, 3)] = p * dt;
-        f[(3, 0)] = r * dt;
-        f[(3, 1)] = q * dt;
+        f[(2, 3)] =  p * dt;
+
+        f[(3, 0)] =  r * dt;
+        f[(3, 1)] =  q * dt;
         f[(3, 2)] = -p * dt;
+
+        // Quaternion dynamics wrt bias
+        f[(0, 4)] =  0.5 * q1 * dt;
+        f[(0, 5)] =  0.5 * q2 * dt;
+        f[(0, 6)] =  0.5 * q3 * dt;
+
+        f[(1, 4)] = -0.5 * q0 * dt;
+        f[(1, 5)] = -0.5 * q3 * dt;
+        f[(1, 6)] =  0.5 * q2 * dt;
+
+        f[(2, 4)] =  0.5 * q3 * dt;
+        f[(2, 5)] = -0.5 * q0 * dt;
+        f[(2, 6)] = -0.5 * q1 * dt;
+
+        f[(3, 4)] = -0.5 * q2 * dt;
+        f[(3, 5)] =  0.5 * q1 * dt;
+        f[(3, 6)] = -0.5 * q0 * dt;
+
         f
     }
 
@@ -194,14 +197,17 @@ impl EKF {
         h[(0, 1)] = 2.0 * (GRAVITY * q3);
         h[(0, 2)] = 2.0 * (-GRAVITY * q0);
         h[(0, 3)] = 2.0 * (GRAVITY * q1);
+
         h[(1, 0)] = 2.0 * (GRAVITY * q1);
         h[(1, 1)] = 2.0 * (GRAVITY * q0);
         h[(1, 2)] = 2.0 * (GRAVITY * q3);
         h[(1, 3)] = 2.0 * (GRAVITY * q2);
+
         h[(2, 0)] = 2.0 * (GRAVITY * q0);
         h[(2, 1)] = 2.0 * (-GRAVITY * q1);
         h[(2, 2)] = 2.0 * (-GRAVITY * q2);
         h[(2, 3)] = 2.0 * (-GRAVITY * q3);
+
         h
     }
 
@@ -248,11 +254,42 @@ impl EKF {
         )
     }
 
+    fn remove_yaw_from_quaternion(&mut self) {
+        let q = UnitQuaternion::from_quaternion(nalgebra::Quaternion::new(
+            self.state[0], self.state[1], self.state[2], self.state[3],
+        ));
+    
+        let euler = q.euler_angles();
+        let new_q = UnitQuaternion::from_euler_angles(euler.0, euler.1, 0.0);
+        let qn = new_q.quaternion();
+    
+        self.state[0] = qn.w;
+        self.state[1] = qn.i;
+        self.state[2] = qn.j;
+        self.state[3] = qn.k;
+    }
+
+    fn lock_yaw(&mut self) {
+        self.state[6] = 0.0;
+        self.covariance[(6, 6)] = 0.0;
+        self.remove_yaw_from_quaternion();
+    }
+    
+
+
 
     /// Get the fully updated state vector
     pub fn get_state(&self) -> Vector7 {
         self.state.clone() // Return a copy of the state vector
     }
     
+    /// Return the current bias-compensated angular velocity
+    pub fn get_corrected_angular_velocity(&self, raw_gyro: [f64; 3]) -> Vector3<f64> {
+        let bias = self.state.fixed_rows::<3>(4);
+        let omega_raw = Vector3::new(raw_gyro[0], raw_gyro[1], raw_gyro[2]);
+        omega_raw - bias
+    }
+
+
 
 }
