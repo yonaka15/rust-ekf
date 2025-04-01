@@ -14,7 +14,7 @@ type Vector4 = Matrix<f64, Const<4>, Const<1>, nalgebra::ArrayStorage<f64, 4, 1>
 pub const GRAVITY: f64 = 9.81; // Gravitational constant (m/s^2)
 
 pub struct EKF {
-    pub state: Vector7,                 // State vector: [q0, q1, q2, q3, ωx, ωy, ωz]
+    pub state: Vector7,                 // State vector: [q0, q1, q2, q3, bx, by, bz]
     pub covariance: Matrix7,            // Covariance matrix P
     pub process_noise: Matrix7,         // Process noise Q
     pub measurement_noise: Matrix3,     // Measurement noise R
@@ -51,18 +51,18 @@ impl EKF {
     
         // Initialize process and measurement noise matrices
         let mut process_noise = Matrix7::zeros();
-        process_noise[(0, 0)] = 0.001; // q0
-        process_noise[(1, 1)] = 0.001; // q1
-        process_noise[(2, 2)] = 0.001; // q2
-        process_noise[(3, 3)] = 0.001; // q3
-        process_noise[(4, 4)] = 1e-2; // bx
-        process_noise[(5, 5)] = 1e-2; // by
-        process_noise[(6, 6)] = 0.0; // bz
+        process_noise[(0, 0)] = 0.05; // q0
+        process_noise[(1, 1)] = 0.05; // q1
+        process_noise[(2, 2)] = 0.05; // q2
+        process_noise[(3, 3)] = 0.05; // q3
+        process_noise[(4, 4)] = 0.01; // bx
+        process_noise[(5, 5)] = 0.01; // by
+        process_noise[(6, 6)] = 0.01; // bz
         
         let mut measurement_noise = Matrix3::zeros();
-        measurement_noise[(0, 0)] = 0.03; // accel x
-        measurement_noise[(1, 1)] = 0.03; // accel y
-        measurement_noise[(2, 2)] = 0.03; // accel z 
+        measurement_noise[(0, 0)] = 0.02; // accel x
+        measurement_noise[(1, 1)] = 0.02; // accel y
+        measurement_noise[(2, 2)] = 0.02; // accel z 
 
     
         EKF {
@@ -83,51 +83,71 @@ impl EKF {
         }
     }
     
-    /// Predict step using gyro data. Pass real dt (computed dynamically)
+    /// EKF Predict Step: Propagates state and covariance forward using gyro data.
     pub fn predict(&mut self, gyro: [f64; 3], dt: f64) {
+        // 1. Subtract estimated bias from raw gyro measurements (control input)
         let bias = self.state.fixed_rows::<3>(4).clone_owned(); // [bx, by, bz]
         let omega = Vector3::new(gyro[0], gyro[1], gyro[2]) - bias;
-    
+
+        // 2. Integrate quaternion using angular velocity (q̇ = 0.5 * Ω(ω) * q)
         let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
         let omega_matrix = Self::omega_matrix(omega);
         let q_dot = 0.5 * omega_matrix * q;
         let q_new = q + q_dot * dt;
-    
+
+        // 3. Update state with new quaternion
         self.state.fixed_rows_mut::<4>(0).copy_from(&q_new);
         Self::normalize_quaternion_in_state(&mut self.state);
-    
+
+        // 4. Compute Jacobian of motion model (F = ∂f/∂x)
         let f_jacobian = self.compute_f_jacobian(gyro, dt);
+        
+        // 5. Propagate uncertainty using the covariance update: P' = FPFᵀ + Q
         self.covariance = f_jacobian * self.covariance * f_jacobian.transpose() + self.process_noise;
-    
+
+        // 6. Optional: lock yaw axis to ensure stability with only accelerometer
         self.lock_yaw(); // ✅ centralized yaw suppression
     }
-    
 
 
-    /// Update step using accelerometer data
+    /// EKF Update Step: Corrects the prediction using accelerometer data (gravity vector).
     pub fn update(&mut self, accel: [f64; 3]) {
+        // 1. Compute expected gravity vector in sensor frame (using estimated orientation)
         let gravity = Vector3::new(0.0, 0.0, -GRAVITY);
         let q = Vector4::new(self.state[0], self.state[1], self.state[2], self.state[3]);
         let r_transpose = Self::quaternion_to_rotation_matrix(q).transpose();
         let accel_expected = r_transpose * gravity;
-    
+
+        // 2. Compute innovation (measurement residual): z - h(x)
         let z = Vector3::new(accel[0], accel[1], accel[2]);
         let innovation = z - accel_expected;
-    
+
+        // 3. Compute Jacobian of measurement model: H = ∂h/∂x
         let h_jacobian = self.compute_h_jacobian(q);
+
+        // 4. Compute innovation covariance: S = HPHᵀ + R
         let s = h_jacobian * self.covariance * h_jacobian.transpose() + self.measurement_noise;
-    
+
+        // 5. Compute Kalman gain: K = PHᵀS⁻¹
         if let Some(s_inv) = s.try_inverse() {
             let k = self.covariance * h_jacobian.transpose() * s_inv;
+
+            // 6. Update state: x = x + K(z - h(x))
             self.state += k * innovation;
+
+            // 7. Update covariance: P = (I - KH)P
             self.covariance = (Matrix7::identity() - k * h_jacobian) * self.covariance;
-    
+
+            // 8. Normalize quaternion again after update
             Self::normalize_quaternion_in_state(&mut self.state);
+
+            // 9. Re-lock yaw axis if necessary
             self.lock_yaw(); // ✅ centralized yaw suppression
         } else {
             eprintln!("Warning: Skipping EKF update — non-invertible innovation covariance.");
         }
     }
+
     
 
 
@@ -282,14 +302,5 @@ impl EKF {
     pub fn get_state(&self) -> Vector7 {
         self.state.clone() // Return a copy of the state vector
     }
-    
-    /// Return the current bias-compensated angular velocity
-    pub fn get_corrected_angular_velocity(&self, raw_gyro: [f64; 3]) -> Vector3<f64> {
-        let bias = self.state.fixed_rows::<3>(4);
-        let omega_raw = Vector3::new(raw_gyro[0], raw_gyro[1], raw_gyro[2]);
-        omega_raw - bias
-    }
-
-
 
 }
