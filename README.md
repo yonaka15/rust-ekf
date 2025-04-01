@@ -1,4 +1,4 @@
-﻿For a deep dive into this Rust Extended Kalman Filter, read my Medium article here.s
+﻿For a deep dive into this Rust Extended Kalman Filter, read my Medium article here.
 
 ## How to Use `rust-ekf`
 
