@@ -1,4 +1,4 @@
-﻿For a deep dive into this Rust Extended Kalman Filter, read my Medium article here.
+﻿For a deep dive into this Rust Extended Kalman Filter, read my Medium article [here](https://medium.com/@opinoquintana/i-wrote-an-extended-kalman-filter-for-uav-attitude-estimation-from-scratch-in-rust-b8748ff33b12).
 
 ## How to Use `rust-ekf`
 
